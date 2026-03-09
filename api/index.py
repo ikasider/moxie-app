@@ -33,7 +33,6 @@ db = SQLAlchemy(app)
 # ... далее идут твои модели (User, Post и т.д.) и роуты ...
 # Добавили форматы видео
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'webm', 'mov'}
-db = SQLAlchemy(app)
 
 def delete_old_file(filename):
     if filename and filename != 'default.png':
