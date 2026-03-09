@@ -1,0 +1,20 @@
+<!-- notifications.html -->
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .alert { padding: 15px 20px; margin-bottom: 15px; border-left: 4px solid var(--cyan); display: flex; align-items: center; gap: 15px; }
+    .alert-magenta { border-left-color: var(--magenta); }
+</style>
+<h2 class="neon-magenta">System Alerts</h2>
+<div class="glass" style="padding: 20px;">
+    <div class="alert glass alert-magenta">
+        <span class="neon-magenta">♥</span> CyberNinja_99 liked your post.
+    </div>
+    <div class="alert glass">
+        <span class="neon-cyan">@</span> NeonGlitch mentioned you in a comment.
+    </div>
+    <div class="alert glass alert-magenta">
+        <span class="neon-magenta">+</span> Ghost_In_Shell accepted your connection request.
+    </div>
+</div>
+{% endblock %}

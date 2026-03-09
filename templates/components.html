@@ -1,0 +1,171 @@
+<!-- components.html -->
+{% macro post_form(user, is_hidden=false) %}
+<div id="postFormContainer" class="card" style="{% if is_hidden %}display: none;{% endif %} padding: 0; overflow: hidden; border: 1px solid var(--border);">
+    <form method="POST" action="/create_post" enctype="multipart/form-data" style="margin: 0;">
+        <div class="flex" style="padding: 15px;">
+            {% if user.avatar != 'default.png' %}
+                <img src="/static/uploads/{{ user.avatar }}" class="avatar" style="object-fit: cover;">
+            {% else %}
+                <div class="avatar">{{ user.username[0]|upper }}</div>
+            {% endif %}
+            <textarea name="content" class="input-text" placeholder="Что нового, {{ user.username }}?" style="border: none; background: transparent; resize: none; min-height: 60px; margin-bottom: 0; font-size: 1.1rem; flex: 1;"></textarea>
+        </div>
+        
+        <div id="media-preview-container" style="display: none; padding: 0 15px 15px 65px; position: relative;">
+            <div id="media-preview-content" style="border-radius: 12px; overflow: hidden; width: 100%;"></div>
+            <button type="button" onclick="clearMedia()" style="position: absolute; top: 5px; right: 25px; background: rgba(0,0,0,0.6); color: white; border: none; border-radius: 50%; width: 25px; height: 25px; cursor: pointer; z-index: 5;">&times;</button>
+        </div>
+
+        <div class="flex items-center" style="justify-content: space-between; padding: 10px 15px; border-top: 1px solid var(--border); background: var(--bg-color);">
+            <label style="cursor: pointer; color: var(--primary); font-weight: 600; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 20px; transition: 0.2s;" onmouseover="this.style.background='rgba(24, 119, 242, 0.1)'" onmouseout="this.style.background='transparent'">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Медиа (до 10)
+                <input type="file" name="media" id="post-media-input" accept="image/*,video/*" multiple style="display: none;" onchange="previewPostMedia(event)">
+            </label>
+            <button type="submit" class="btn-primary" style="padding: 8px 20px;">Опубликовать</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function previewPostMedia(event) {
+    const files = event.target.files;
+    if (files.length === 0) return;
+    if (files.length > 10) { alert("Максимум 10 файлов!"); event.target.value = ''; return; }
+    
+    const container = document.getElementById('media-preview-container');
+    const content = document.getElementById('media-preview-content');
+    content.innerHTML = '';
+    
+    // Сетка для галереи
+    content.style.display = 'grid';
+    content.style.gridTemplateColumns = files.length > 1 ? '1fr 1fr' : '1fr';
+    content.style.gap = '5px';
+
+    for(let i=0; i<files.length; i++) {
+        const url = URL.createObjectURL(files[i]);
+        if (files[i].type.startsWith('video/')) {
+            content.innerHTML += `<video src="${url}" controls style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px;"></video>`;
+        } else {
+            content.innerHTML += `<img src="${url}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px;">`;
+        }
+    }
+    container.style.display = 'block';
+}
+
+function clearMedia() {
+    document.getElementById('post-media-input').value = '';
+    document.getElementById('media-preview-container').style.display = 'none';
+    document.getElementById('media-preview-content').innerHTML = '';
+}
+
+function showEditForm(postId) {
+    document.getElementById('post-content-' + postId).style.display = 'none';
+    document.getElementById('post-edit-form-' + postId).style.display = 'block';
+}
+function hideEditForm(postId) {
+    document.getElementById('post-content-' + postId).style.display = 'block';
+    document.getElementById('post-edit-form-' + postId).style.display = 'none';
+}
+</script>
+{% endmacro %}
+
+{% macro render_avatar(target_user, extra_class='', show_status=true) %}
+<div style="position: relative; display: inline-block; vertical-align: middle;">
+    {% if target_user.is_banned %}
+        <div class="avatar {{ extra_class }}" style="background: #e41e3f; display: flex; align-items: center; justify-content: center; border-radius: 50%;">
+            <svg viewBox="0 0 24 24" style="width: 70%; height: 70%; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round;">
+                <circle cx="12" cy="12" r="11"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+        </div>
+    {% elif target_user.avatar and target_user.avatar != 'default.png' %}
+        <img src="/static/uploads/{{ target_user.avatar }}" class="avatar {{ extra_class }}" style="object-fit: cover; border-radius: 50%; border: 1px solid var(--border);">
+    {% else %}
+        <div class="avatar {{ extra_class }}" style="border-radius: 50%; border: 1px solid var(--border);">{{ target_user.username[0]|upper }}</div>
+    {% endif %}
+
+    {% if show_status and not target_user.is_banned %}
+        {# Авто-размер точки: 18% от размера аватарки #}
+        <div style="
+            position: absolute; 
+            bottom: 5%; 
+            right: 5%; 
+            width: 20%; 
+            height: 20%; 
+            min-width: 8px; 
+            min-height: 8px;
+            max-width: 20px;
+            max-height: 20px;
+            border-radius: 50%; 
+            border: 2px solid var(--surface);
+            background: {% if target_user.is_online() %}#2ecc71{% else %}#95a5a6{% endif %};
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        " title="{% if target_user.is_online() %}В сети{% else %}Не в сети{% endif %}"></div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+{% macro post_menu(post, current_user) %}
+    {% if post.user_id == current_user.id or current_user.is_admin %}
+    <div class="dropdown">
+        <button class="dropbtn" onclick="toggleDropdown({{ post.id }})" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 5px;">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>
+        <div id="dropdown-{{ post.id }}" class="dropdown-content">
+            
+            {% if post.user_id == current_user.id %}
+            <button onclick="showEditForm({{ post.id }})"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Редактировать</button>
+            {% endif %}
+            
+            <form action="/delete_post/{{ post.id }}" method="POST" style="margin: 0;">
+                <button type="submit" style="color: #e41e3f;"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    {% if post.user_id != current_user.id and current_user.is_admin %}Удалить (Админ){% else %}Удалить{% endif %}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+{% endmacro %}
+
+{% macro render_media(media_str) %}
+    {% if media_str %}
+        {% set files = media_str.split(',') %}
+        <div class="media-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 4px; margin-top: 5px; border-radius: 12px; overflow: hidden;">
+        {% for filename in files %}
+            {% set ext = filename.split('.')[-1]|lower %}
+            <div class="media-item" style="position: relative; aspect-ratio: 1/1; background: #000; cursor: pointer;">
+                {% if ext in ['mp4', 'webm', 'mov'] %}
+                    <video src="/static/uploads/{{ filename }}" style="width: 100%; height: 100%; object-fit: cover;"></video>
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; background: rgba(0,0,0,0.5); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; pointer-events: none;">▶</div>
+                {% else %}
+                    <img src="/static/uploads/{{ filename }}" style="width: 100%; height: 100%; object-fit: cover;" onclick="openGallery('{{ media_str }}', {{ loop.index0 }})">
+                {% endif %}
+            </div>
+        {% endfor %}
+        </div>
+    {% endif %}
+{% endmacro %}
+
+{% macro post_menu(post, current_user) %}
+    {% if post.user_id == current_user.id or current_user.is_admin %}
+    <div class="dropdown">
+        <button class="dropbtn" onclick="toggleDropdown({{ post.id }})" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 5px;">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>
+        <div id="dropdown-{{ post.id }}" class="dropdown-content">
+            
+            {% if post.user_id == current_user.id %}
+            <button onclick="showEditForm({{ post.id }})"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Редактировать</button>
+            {% endif %}
+            
+            <form action="/delete_post/{{ post.id }}" method="POST" style="margin: 0;">
+                <button type="submit" style="color: #e41e3f;"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    {% if post.user_id != current_user.id and current_user.is_admin %}Удалить (Админ){% else %}Удалить{% endif %}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+{% endmacro %}
