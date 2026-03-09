@@ -27,8 +27,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # Папка для загрузок (на Vercel будет работать только временно)
-app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, '../static/uploads')
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, '../static/uploads')
+# os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # ... далее идут твои модели (User, Post и т.д.) и роуты ...
 # Добавили форматы видео

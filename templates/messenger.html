@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {% extends "base.html" %}
 {% import 'components.html' as comp %}
 {% block content %}
@@ -353,4 +354,361 @@
         }
     }
 </script>
+=======
+{% extends "base.html" %}
+{% import 'components.html' as comp %}
+{% block content %}
+<style>
+    /* Основной контейнер */
+    .chat-container { 
+        display: flex; 
+        height: 80vh; 
+        border: 1px solid var(--border); 
+        border-radius: 16px; 
+        background: var(--surface); 
+        overflow: hidden; 
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+    }
+
+    /* Боковая панель */
+    .chat-sidebar { 
+        width: 300px; 
+        border-right: 1px solid var(--border); 
+        background: var(--bg-color); 
+        display: flex; 
+        flex-direction: column; 
+    }
+    .chat-sidebar::-webkit-scrollbar { display: none; }
+    .chat-sidebar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    .sidebar-header { padding: 15px; border-bottom: 1px solid var(--border); background: var(--surface); }
+
+    .chat-user { 
+        padding: 12px 16px; 
+        border-bottom: 1px solid var(--border); 
+        transition: 0.2s; 
+        text-decoration: none; 
+        color: inherit; 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+    }
+    .chat-user:hover { background: rgba(0,0,0,0.03); }
+    .chat-user.active { background: var(--surface); border-left: 4px solid var(--primary); }
+
+    /* Основная зона чата */
+    .chat-main { flex: 1; display: flex; flex-direction: column; background: var(--surface); position: relative; }
+    
+    .chat-header { 
+        padding: 12px 20px; 
+        border-bottom: 1px solid var(--border); 
+        background: var(--surface); 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+        z-index: 10;
+    }
+
+    .chat-messages { 
+        flex: 1; 
+        padding: 20px; 
+        overflow-y: auto; 
+        display: flex; 
+        flex-direction: column; 
+        gap: 10px; 
+    }
+    .chat-messages::-webkit-scrollbar { display: none; }
+    .chat-messages { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Пузыри сообщений */
+    .msg-bubble { 
+        padding: 10px 14px; 
+        border-radius: 18px; 
+        max-width: 70%; 
+        position: relative; 
+        transition: transform 0.2s ease;
+    }
+    .msg-mine { 
+        background: var(--primary); 
+        color: white; 
+        align-self: flex-end; 
+        border-bottom-right-radius: 4px; 
+    }
+    .msg-theirs { 
+        background: var(--bg-color); 
+        color: var(--text-main); 
+        align-self: flex-start; 
+        border-bottom-left-radius: 4px; 
+        border: 1px solid var(--border);
+    }
+
+    /* Иконка удаления на ховер */
+    .delete-btn {
+        opacity: 0;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #e41e3f;
+        cursor: pointer;
+        padding: 5px;
+        transition: opacity 0.2s ease;
+    }
+    .msg-mine .delete-btn { left: -35px; }
+    .msg-theirs .delete-btn { right: -35px; }
+    .msg-bubble:hover .delete-btn { opacity: 1; }
+
+    /* Сетка медиа */
+    .media-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+        gap: 4px; 
+        margin-bottom: 6px; 
+        border-radius: 12px; 
+        overflow: hidden; 
+    }
+    .media-item { 
+        position: relative; 
+        aspect-ratio: 1; 
+        background: #000; 
+        cursor: pointer; 
+        overflow: hidden; 
+    }
+    .media-item img, .media-item video { width: 100%; height: 100%; object-fit: cover; transition: 0.3s; }
+    .media-item:hover img { transform: scale(1.05); }
+
+    /* Кастомный оверлей плеера */
+    .video-hint {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.15);
+        color: white;
+    }
+    .video-hint svg { width: 40px; height: 40px; fill: white; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+
+    /* Ввод сообщения */
+    .chat-input-area { 
+        padding: 15px 20px; 
+        border-top: 1px solid var(--border); 
+        background: var(--surface); 
+        display: flex; 
+        gap: 12px; 
+        align-items: center; 
+    }
+
+    /* Лайтбокс / Галерея */
+    #imageLightbox { 
+        display: none; 
+        position: fixed; 
+        inset: 0; 
+        background: rgba(0,0,0,0.95); 
+        z-index: 3000; 
+        align-items: center; 
+        justify-content: center; 
+        opacity: 0; 
+        transition: 0.3s; 
+        backdrop-filter: blur(10px); 
+    }
+    .nav-btn { 
+        position: absolute; 
+        top: 50%; 
+        transform: translateY(-50%); 
+        background: rgba(255,255,255,0.1); 
+        border: none; 
+        color: white; 
+        padding: 15px; 
+        cursor: pointer; 
+        border-radius: 50%; 
+        font-size: 20px; 
+    }
+    .nav-btn:hover { background: rgba(255,255,255,0.2); }
+</style>
+
+<div class="chat-container">
+    <div class="chat-sidebar">
+        <div class="sidebar-header">
+            <input type="text" id="friendSearch" class="input-text" style="margin: 0; border-radius: 20px;" placeholder="Поиск друга..." onkeyup="filterFriends()">
+        </div>
+        <div id="active-chats" style="flex: 1; overflow-y: auto;">
+            {% for u in active_users %}
+            <a href="/messenger?chat_with={{ u.id }}" class="chat-user {% if chat_user and chat_user.id == u.id %}active{% endif %}">
+                {{ comp.render_avatar(u) }}
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ u.username }}</div>
+                    {% if u.is_online() %}
+                        <span style="color: #2ecc71; font-size: 0.7rem;">● Online</span>
+                    {% else %}
+                        <span style="color: var(--text-muted); font-size: 0.7rem;">Был(а) {{ u.last_seen.strftime('%H:%M') }}</span>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="chat-main">
+        {% if chat_user %}
+            <div class="chat-header">
+                <div style="position: relative;">
+                    {{ comp.render_avatar(chat_user) }}
+                    {% if chat_user.is_online() %}
+                        <div style="position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; background: #2ecc71; border: 2px solid var(--surface); border-radius: 50%;"></div>
+                    {% endif %}
+                </div>
+                <div>
+                    <div style="font-weight: 600;">{{ chat_user.username }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">
+                        {% if chat_user.is_online() %}В сети{% else %}Был(а) в сети в {{ chat_user.last_seen.strftime('%H:%M') }}{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="messages-box">
+                {% for msg in messages %}
+                <div class="msg-bubble {% if msg.sender_id == user.id %}msg-mine{% else %}msg-theirs{% endif %}">
+                    {% if msg.media %}
+                    <div class="media-grid">
+                        {% for file in msg.media.split(',') %}
+                        <div class="media-item" onclick="openGallery('{{ msg.media }}', {{ loop.index0 }})">
+                            {% if file.lower().endswith(('.mp4', '.webm', '.mov')) %}
+                                <video src="/static/uploads/{{ file }}"></video>
+                                <div class="video-hint">
+                                    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                </div>
+                            {% else %}
+                                <img src="/static/uploads/{{ file }}" loading="lazy">
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if msg.text %}<div style="line-height: 1.4;">{{ msg.text }}</div>{% endif %}
+                    <div style="font-size: 0.6rem; opacity: 0.6; text-align: right; margin-top: 4px;">{{ msg.timestamp.strftime('%H:%M') }}</div>
+
+                    {% if msg.sender_id == user.id %}
+                    <form action="/delete_message/{{ msg.id }}" method="POST">
+                        <button type="submit" class="delete-btn" title="Удалить сообщение">
+                            <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+
+            <div id="chat-preview-container" style="display: none; padding: 10px 20px; background: var(--bg-color); border-top: 1px solid var(--border);">
+                <div id="chat-preview-content" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px;"></div>
+                <button type="button" onclick="clearChatMedia()" style="font-size: 0.8rem; color: #e41e3f; background: none; border: none; cursor: pointer; padding: 5px 0;">Отменить выбор</button>
+            </div>
+
+            <form class="chat-input-area" method="POST" action="/messenger?chat_with={{ chat_user.id }}" enctype="multipart/form-data">
+                <label style="cursor: pointer; color: var(--text-muted); padding: 5px;">
+                    <svg class="icon" viewBox="0 0 24 24" style="width: 24px; height: 24px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    <input type="file" name="media" multiple accept="image/*,video/*" style="display: none;" onchange="previewChatMedia(event)">
+                </label>
+                <input type="text" name="text" class="input-text" style="flex: 1; margin: 0; border-radius: 24px; padding: 10px 18px;" placeholder="Ваше сообщение..." autocomplete="off">
+                <button type="submit" class="btn-primary" style="border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg class="icon" viewBox="0 0 24 24" style="stroke: white; width: 20px; height: 20px; margin-left: -2px;"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+            </form>
+        {% else %}
+            <div style="margin: auto; text-align: center; color: var(--text-muted);">
+                <svg class="icon" viewBox="0 0 24 24" style="width: 60px; height: 60px; opacity: 0.2; margin-bottom: 15px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <p>Выберите диалог из списка слева</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div id="imageLightbox">
+    <button onclick="closeLightbox()" style="position: absolute; top: 25px; right: 25px; color: white; background: none; border: none; font-size: 45px; cursor: pointer; z-index: 3100;">&times;</button>
+    <div id="lightboxContent" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px;"></div>
+    <button id="prevBtn" class="nav-btn" style="left: 30px;" onclick="changeMedia(-1)">❮</button>
+    <button id="nextBtn" class="nav-btn" style="right: 30px;" onclick="changeMedia(1)">❯</button>
+</div>
+
+<script>
+    // Авто-скролл
+    const box = document.getElementById('messages-box');
+    if (box) box.scrollTop = box.scrollHeight;
+
+    // Логика Галереи
+    let currentGallery = [];
+    let currentIndex = 0;
+
+    function openGallery(mediaStr, index) {
+        currentGallery = mediaStr.split(',');
+        currentIndex = index;
+        const lb = document.getElementById('imageLightbox');
+        lb.style.display = 'flex';
+        setTimeout(() => lb.style.opacity = '1', 10);
+        updateLightbox();
+    }
+
+    function updateLightbox() {
+        const content = document.getElementById('lightboxContent');
+        const file = currentGallery[currentIndex];
+        const isVideo = file.toLowerCase().match(/\.(mp4|webm|mov)$/);
+        
+        content.innerHTML = isVideo 
+            ? `<video src="/static/uploads/${file}" controls autoplay style="max-width: 90%; max-height: 85vh; border-radius: 8px;"></video>`
+            : `<img src="/static/uploads/${file}" style="max-width: 90%; max-height: 85vh; object-fit: contain; border-radius: 8px;">`;
+        
+        document.getElementById('prevBtn').style.display = currentGallery.length > 1 ? 'block' : 'none';
+        document.getElementById('nextBtn').style.display = currentGallery.length > 1 ? 'block' : 'none';
+    }
+
+    function changeMedia(dir) {
+        currentIndex = (currentIndex + dir + currentGallery.length) % currentGallery.length;
+        updateLightbox();
+    }
+
+    function closeLightbox() {
+        const lb = document.getElementById('imageLightbox');
+        lb.style.opacity = '0';
+        setTimeout(() => {
+            lb.style.display = 'none';
+            document.getElementById('lightboxContent').innerHTML = '';
+        }, 300);
+    }
+
+    // Предпросмотр перед отправкой
+    function previewChatMedia(event) {
+        const files = event.target.files;
+        const container = document.getElementById('chat-preview-container');
+        const content = document.getElementById('chat-preview-content');
+        content.innerHTML = '';
+        container.style.display = files.length ? 'block' : 'none';
+        
+        for(let file of files) {
+            const url = URL.createObjectURL(file);
+            if (file.type.startsWith('video/')) {
+                content.innerHTML += `<video src="${url}" style="height: 70px; border-radius: 8px; border: 1px solid var(--border);"></video>`;
+            } else {
+                content.innerHTML += `<img src="${url}" style="height: 70px; width: 70px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border);">`;
+            }
+        }
+    }
+
+    function clearChatMedia() {
+        document.querySelector('input[type="file"]').value = '';
+        document.getElementById('chat-preview-container').style.display = 'none';
+    }
+
+    // Поиск
+    function filterFriends() {
+        const filter = document.getElementById('friendSearch').value.toUpperCase();
+        const users = document.getElementsByClassName('chat-user');
+        for (let user of users) {
+            const name = user.querySelector('div div').textContent;
+            user.style.display = name.toUpperCase().indexOf(filter) > -1 ? "" : "none";
+        }
+    }
+</script>
+>>>>>>> 689518a (fix: remove local storage and init git)
 {% endblock %}

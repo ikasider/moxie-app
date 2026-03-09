@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 Flask==3.0.0
 Flask-SQLAlchemy==3.1.1
 psycopg2-binary
+=======
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+psycopg2-binary
+>>>>>>> 689518a (fix: remove local storage and init git)
 supabase==2.3.0
