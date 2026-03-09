@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 <!-- groups.html -->
 {% extends "base.html" %}
 {% block content %}
@@ -26,33 +25,4 @@
         <button class="join-btn">Join Grid</button>
     </div>
 </div>
-=======
-<!-- groups.html -->
-{% extends "base.html" %}
-{% block content %}
-<style>
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; margin-top: 20px; }
-    .card { padding: 20px; text-align: center; transition: 0.3s; }
-    .card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0, 243, 255, 0.4); }
-    .join-btn { background: rgba(255,0,255,0.2); border: 1px solid var(--magenta); color: white; padding: 8px 20px; border-radius: 20px; margin-top: 15px; cursor: pointer; }
-</style>
-<h2 class="neon-cyan">Discover Communities</h2>
-<div class="grid">
-    <div class="card glass">
-        <h3 class="neon-magenta">Python Runners</h3>
-        <p>12k Members</p>
-        <button class="join-btn">Join Grid</button>
-    </div>
-    <div class="card glass">
-        <h3 class="neon-cyan">Synthwave Audio</h3>
-        <p>8k Members</p>
-        <button class="join-btn">Join Grid</button>
-    </div>
-    <div class="card glass">
-        <h3 class="neon-magenta">UI/UX Holographics</h3>
-        <p>24k Members</p>
-        <button class="join-btn">Join Grid</button>
-    </div>
-</div>
->>>>>>> 689518a (fix: remove local storage and init git)
 {% endblock %}

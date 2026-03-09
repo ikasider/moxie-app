@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 <!-- friends.html -->
 {% extends "base.html" %}
 {% import 'components.html' as comp %}
@@ -55,62 +54,4 @@
     {% endfor %}
     </div>
 </div>
-=======
-<!-- friends.html -->
-{% extends "base.html" %}
-{% import 'components.html' as comp %}
-{% block content %}
-<div class="page-header">Друзья</div>
-
-<div class="card">
-    <h3 style="margin-top: 0;">Мои друзья ({{ my_friends|length }})</h3>
-    <div style="display: flex; flex-direction: column; gap: 15px;">
-    {% for f in my_friends %}
-        <div class="flex items-center gap-10" style="justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
-            <div class="flex items-center gap-10">
-                <a href="/profile/{{ f.id }}" style="display: flex;">
-                    {{ comp.render_avatar(f) }}
-                </a>
-                <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px;">
-                    <a href="/profile/{{ f.id }}" style="font-weight: 600;">{{ f.username }}</a>
-                    <span class="lvl-badge tier-{{ f.level // 10 }}" style="margin-left: 0;">Lvl {{ f.level }}</span>
-                </div>
-            </div>
-            <div class="flex gap-10">
-                <a href="/messenger?chat_with={{ f.id }}" class="btn-primary" style="background: var(--surface); color: var(--primary); border: 1px solid var(--primary); padding: 8px 15px;">Написать</a>
-                <form action="/toggle_friend/{{ f.id }}" method="POST" style="margin: 0;">
-                    <button type="submit" class="btn-primary" style="background: #e41e3f; padding: 8px 15px;">Удалить</button>
-                </form>
-            </div>
-        </div>
-    {% else %}
-        <p class="text-muted">У вас пока нет друзей.</p>
-    {% endfor %}
-    </div>
-</div>
-
-<div class="card">
-    <h3 style="margin-top: 0;">Найти друзей</h3>
-    <div style="display: flex; flex-direction: column; gap: 15px;">
-    {% for u in discover_users %}
-        <div class="flex items-center gap-10" style="justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
-            <div class="flex items-center gap-10">
-                <a href="/profile/{{ u.id }}" style="display: flex;">
-                    {{ comp.render_avatar(u) }}
-                </a>
-                <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px;">
-                    <a href="/profile/{{ u.id }}" style="font-weight: 600;">{{ u.username }}</a>
-                    <span class="lvl-badge tier-{{ u.level // 10 }}" style="margin-left: 0;">Lvl {{ u.level }}</span>
-                </div>
-            </div>
-            <form action="/toggle_friend/{{ u.id }}" method="POST" style="margin: 0;">
-                <button type="submit" class="btn-primary" style="padding: 8px 15px;">Добавить в друзья</button>
-            </form>
-        </div>
-    {% else %}
-        <p class="text-muted" style="text-align: center;">Больше нет пользователей для добавления.</p>
-    {% endfor %}
-    </div>
-</div>
->>>>>>> 689518a (fix: remove local storage and init git)
 {% endblock %}

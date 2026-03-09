@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 <!-- feed.html -->
 {% extends "base.html" %}
 {% import 'components.html' as comp %}
@@ -44,51 +43,4 @@
 {% else %}
 <div class="card" style="text-align: center; color: var(--text-muted);">Постов пока нет. Будьте первым!</div>
 {% endfor %}
-=======
-<!-- feed.html -->
-{% extends "base.html" %}
-{% import 'components.html' as comp %}
-{% block content %}
-<div class="page-header">Главная лента</div>
-
-{{ comp.post_form(user) }}
-
-{% for post in posts %}
-<div class="card">
-    <div class="flex items-center" style="justify-content: space-between; margin-bottom: 10px;">
-        <div class="flex items-center gap-10">
-            <a href="/profile/{{ post.author.id }}">
-                {{ comp.render_avatar(post.author) }}
-            </a>
-            <div>
-                <div>
-                    <a href="/profile/{{ post.author.id }}" style="font-weight: 600;">{{ post.author.username }}</a>
-                    <span class="lvl-badge tier-{{ post.author.level // 10 }}">Lvl {{ post.author.level }}</span>
-                </div>
-                <div class="text-muted">{{ post.timestamp.strftime('%d.%m.%Y %H:%M') }}</div>
-            </div>
-        </div>
-        
-        {{ comp.post_menu(post, user) }}
-    </div>
-    
-    <div id="post-content-{{ post.id }}">
-        {% if post.content %}
-            <div style="line-height: 1.5; white-space: pre-wrap; font-size: 1.05rem;">{{ post.content }}</div>
-        {% endif %}
-        {{ comp.render_media(post.media) }}
-    </div>
-
-    <form id="post-edit-form-{{ post.id }}" action="/edit_post/{{ post.id }}" method="POST" style="display: none; margin-top: 10px;">
-        <textarea name="content" class="input-text" rows="3" style="resize: vertical;">{{ post.content if post.content else '' }}</textarea>
-        <div style="text-align: right; margin-top: 5px;">
-            <button type="button" class="btn-primary" style="background: var(--surface); color: var(--text-main); border: 1px solid var(--border);" onclick="hideEditForm({{ post.id }})">Отмена</button>
-            <button type="submit" class="btn-primary">Сохранить</button>
-        </div>
-    </form>
-</div>
-{% else %}
-<div class="card" style="text-align: center; color: var(--text-muted);">Постов пока нет. Будьте первым!</div>
-{% endfor %}
->>>>>>> 689518a (fix: remove local storage and init git)
 {% endblock %}
