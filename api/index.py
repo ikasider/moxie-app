@@ -6,6 +6,7 @@ from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from supabase import create_client, Client
 
 # Настройка путей для Vercel
 base_dir = os.path.abspath(os.path.dirname(__file__))
@@ -46,13 +47,34 @@ def delete_old_file(filename):
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def save_media(file, prefix="media"):
-    if file and file.filename != '' and allowed_file(file.filename):
-        ext = file.filename.rsplit('.', 1)[1].lower()
-        filename = f"{prefix}_{uuid.uuid4().hex}.{ext}"
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        return filename
-    return None
+def save_media(file, folder):
+    if not file or not supabase:
+        return 'default.png'
+    
+    # Создаем уникальное имя файла
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    
+    # Читаем содержимое файла в память
+    file_data = file.read()
+    
+    # Загружаем в бакет 'avatars' в Supabase
+    # Убедись, что ты создал бакет с именем 'avatars' в панели Supabase!
+    bucket_name = "avatars" 
+    path_on_supabase = f"{filename}"
+    
+    try:
+        supabase.storage.from_(bucket_name).upload(
+            path=path_on_supabase,
+            file=file_data,
+            file_options={"content-type": file.content_type}
+        )
+        # Получаем публичную ссылку на файл
+        public_url = supabase.storage.from_(bucket_name).get_public_url(path_on_supabase)
+        return public_url
+    except Exception as e:
+        print(f"Ошибка загрузки: {e}")
+        return 'default.png'
 
 # --- Модели Базы Данных ---
 friendships = db.Table('friendships',
