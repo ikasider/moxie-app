@@ -17,6 +17,8 @@ app = Flask(__name__,
 app.secret_key = os.environ.get('SECRET_KEY', '7eb0d50d0c5f7a80dc1c588dda823619df90d117421087b6')
 
 # --- Настройка Базы Данных (Supabase / SQLite) ---
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_KEY")
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL:
     # SQLAlchemy требует postgresql:// вместо postgres://
@@ -48,32 +50,29 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def save_media(file, folder):
+    # Если ключей нет или файл пустой, возвращаем аватар по умолчанию
     if not file or not supabase:
+        print("Supabase не настроен или файл отсутствует")
         return 'default.png'
     
-    # Создаем уникальное имя файла
-    ext = file.filename.rsplit('.', 1)[1].lower()
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    
-    # Читаем содержимое файла в память
-    file_data = file.read()
-    
-    # Загружаем в бакет 'avatars' в Supabase
-    # Убедись, что ты создал бакет с именем 'avatars' в панели Supabase!
-    bucket_name = "avatars" 
-    path_on_supabase = f"{filename}"
-    
     try:
+        # Создаем уникальное имя
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        
+        file_data = file.read()
+        
+        bucket_name = "avatars"
         supabase.storage.from_(bucket_name).upload(
-            path=path_on_supabase,
+            path=filename,
             file=file_data,
             file_options={"content-type": file.content_type}
         )
-        # Получаем публичную ссылку на файл
-        public_url = supabase.storage.from_(bucket_name).get_public_url(path_on_supabase)
-        return public_url
+        
+        res = supabase.storage.from_(bucket_name).get_public_url(filename)
+        return res
     except Exception as e:
-        print(f"Ошибка загрузки: {e}")
+        print(f"Ошибка загрузки в Supabase: {e}")
         return 'default.png'
 
 # --- Модели Базы Данных ---
