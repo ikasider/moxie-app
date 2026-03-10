@@ -34,14 +34,9 @@ if supabase_url and supabase_key:
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'webm', 'mov'}
 
 def delete_old_file(file_url):
-    # Если файла нет или это аватар по умолчанию — ничего не делаем
     if not file_url or file_url == 'default.png':
         return
-
     try:
-        # Пока мы просто "заглушаем" удаление, чтобы сайт работал.
-        # На Vercel мы не можем удалять файлы через os.remove, 
-        # так как они лежат в облаке Supabase, а не на диске.
         pass 
     except Exception as e:
         print(f"Ошибка при удалении: {e}")
