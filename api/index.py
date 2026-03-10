@@ -28,23 +28,23 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-# Папка для загрузок (на Vercel будет работать только временно)
-# app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, '../static/uploads')
-# os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# ... далее идут твои модели (User, Post и т.д.) и роуты ...
-# Добавили форматы видео
+supabase = None
+if supabase_url and supabase_key:
+    supabase = create_client(supabase_url, supabase_key)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'webm', 'mov'}
 
-def delete_old_file(filename):
-    if filename and filename != 'default.png':
-        path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        if os.path.exists(path):
-            try:
-                os.remove(path)
-            except:
-                pass
+def delete_old_file(file_url):
+    # Если файла нет или это аватар по умолчанию — ничего не делаем
+    if not file_url or file_url == 'default.png':
+        return
+
+    try:
+        # Пока мы просто "заглушаем" удаление, чтобы сайт работал.
+        # На Vercel мы не можем удалять файлы через os.remove, 
+        # так как они лежат в облаке Supabase, а не на диске.
+        pass 
+    except Exception as e:
+        print(f"Ошибка при удалении: {e}")
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
