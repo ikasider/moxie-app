@@ -1,0 +1,2006 @@
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\parc.py
+==================================================
+
+import os
+
+# Настройки
+project_path = r'C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app'
+output_file = 'all_code.txt'
+extensions = ('.py', '.html')
+ignore_dirs = {'.git', 'venv', '__pycache__', '.idea', '.vscode'}
+
+with open(output_file, 'w', encoding='utf-8') as outfile:
+    for root, dirs, files in os.walk(project_path):
+        # Удаляем ненужные папки из списка обхода
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        
+        for file in files:
+            if file.endswith(extensions):
+                file_path = os.path.join(root, file)
+                
+                # Добавляем заголовок, чтобы понимать, откуда этот код
+                outfile.write(f"\n{'='*50}\n")
+                outfile.write(f"FILE: {file_path}\n")
+                outfile.write(f"{'='*50}\n\n")
+                
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as infile:
+                        outfile.write(infile.read())
+                except Exception as e:
+                    outfile.write(f"[Ошибка при чтении файла: {e}]\n")
+                
+                outfile.write("\n\n")
+
+print(f"Готово! Весь код собран в файл: {output_file}")
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\api\index.py
+==================================================
+
+# index.py
+import os
+import uuid
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from supabase import create_client, Client
+
+# Настройка путей для Vercel
+base_dir = os.path.abspath(os.path.dirname(__file__))
+app = Flask(__name__, 
+            template_folder=os.path.join(base_dir, '../templates'), 
+            static_folder=os.path.join(base_dir, '../static'))
+
+app.secret_key = os.environ.get('SECRET_KEY', '7eb0d50d0c5f7a80dc1c588dda823619df90d117421087b6')
+
+# --- Настройка Базы Данных (Supabase / SQLite) ---
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_KEY")
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL:
+    # SQLAlchemy требует postgresql:// вместо postgres://
+    app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL.replace('postgres://', 'postgresql://')
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///moxie.db'
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+supabase = None
+if supabase_url and supabase_key:
+    supabase = create_client(supabase_url, supabase_key)
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'webm', 'mov'}
+
+def delete_old_file(file_url):
+    if not file_url or file_url == 'default.png':
+        return
+    try:
+        pass 
+    except Exception as e:
+        print(f"Ошибка при удалении: {e}")
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def save_media(file, folder):
+    # Если ключей нет или файл пустой, возвращаем аватар по умолчанию
+    if not file or not supabase:
+        print("Supabase не настроен или файл отсутствует")
+        return 'default.png'
+    
+    try:
+        # Создаем уникальное имя
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        
+        file_data = file.read()
+        
+        bucket_name = "avatars"
+        supabase.storage.from_(bucket_name).upload(
+            path=filename,
+            file=file_data,
+            file_options={"content-type": file.content_type}
+        )
+        
+        # ... (твой код загрузки)
+        res = supabase.storage.from_(bucket_name).get_public_url(filename)
+        
+        # Если res это объект, берем из него атрибут public_url
+        if hasattr(res, 'public_url'):
+            return res.public_url
+        return str(res)
+        return res
+    except Exception as e:
+        print(f"Ошибка загрузки в Supabase: {e}")
+        return 'default.png'
+
+# --- Модели Базы Данных ---
+friendships = db.Table('friendships',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('friend_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    bio = db.Column(db.String(200), default="Привет, я в Moxie!")
+    avatar = db.Column(db.String(120), default='default.png')
+    gender = db.Column(db.String(20), nullable=True)
+    birth_date = db.Column(db.Date, nullable=True)
+    level = db.Column(db.Integer, default=1)
+    xp = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    
+    # НОВОЕ ПОЛЕ: Приватность
+    is_private = db.Column(db.Boolean, default=False)
+    
+    is_admin = db.Column(db.Boolean, default=False)
+    is_banned = db.Column(db.Boolean, default=False)
+    ban_reason = db.Column(db.String(255), nullable=True)
+    ban_until = db.Column(db.DateTime, nullable=True)
+
+    posts = db.relationship('Post', backref='author', lazy=True, order_by="desc(Post.id)")
+    friends = db.relationship('User', secondary=friendships,
+                              primaryjoin=(friendships.c.user_id == id),
+                              secondaryjoin=(friendships.c.friend_id == id),
+                              backref=db.backref('followers', lazy='dynamic'), lazy='dynamic')
+    
+    last_seen = db.Column(db.DateTime, default=datetime.now)
+    def is_online(self):
+        if self.last_seen:
+            return datetime.now() < self.last_seen + timedelta(minutes=5)
+        return False
+
+    def is_friend(self, user): return self.friends.filter(friendships.c.friend_id == user.id).count() > 0
+    def add_friend(self, user):
+        if not self.is_friend(user): self.friends.append(user)
+    def remove_friend(self, user):
+        if self.is_friend(user): self.friends.remove(user)
+
+    def is_following(self, user):
+        return self.friends.filter(friendships.c.friend_id == user.id).count() > 0
+
+    def is_followed_by(self, user):
+        return user.friends.filter(friendships.c.friend_id == self.id).count() > 0
+
+    def is_mutual(self, user):
+        return self.is_following(user) and self.is_followed_by(user)
+
+    def follow(self, user):
+        if not self.is_following(user):
+            self.friends.append(user)
+
+    def unfollow(self, user):
+        if self.is_following(user):
+            self.friends.remove(user)
+
+    @property
+    def following_count(self):
+        return self.friends.count()
+
+    @property
+    def followers_count(self):
+        return User.query.join(friendships, (friendships.c.user_id == User.id)).filter(friendships.c.friend_id == self.id).count()
+
+    @property
+    def mutual_friends_count(self):
+        # Считаем только взаимных
+        count = 0
+        for f in self.friends:
+            if f.is_following(self):
+                count += 1
+        return count
+
+class Post(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    content = db.Column(db.Text, nullable=True)
+    media = db.Column(db.Text, nullable=True) # ТЕПЕРЬ ТУТ TEXT (для хранения списка файлов через запятую)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    receiver_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    text = db.Column(db.Text, nullable=True)
+    media = db.Column(db.Text, nullable=True) # ИЗМЕНЕНО НА TEXT (для 10 файлов)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
+    sender = db.relationship('User', foreign_keys=[sender_id])
+    receiver = db.relationship('User', foreign_keys=[receiver_id])
+
+with app.app_context(): db.create_all()
+
+@app.before_request
+def check_banned():
+    if request.endpoint in ['static', 'login', 'register', 'logout']:
+        return
+    user = get_current_user()
+    if user and user.is_banned:
+        # Проверяем, не истек ли временный бан
+        if user.ban_until and datetime.now() > user.ban_until:
+            user.is_banned = False
+            user.ban_reason = None
+            user.ban_until = None
+            db.session.commit()
+        else:
+            return render_template('banned.html', user=user)
+
+# Декоратор для защиты админских роутов
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+        if not user or not user.is_admin:
+            flash('У вас нет прав администратора.', 'error')
+            return redirect(url_for('feed'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# --- Вспомогательные функции ---
+def get_current_user():
+    if 'user_id' in session:
+        return User.query.get(session['user_id'])
+    return None
+
+def add_xp(user, amount):
+    user.xp += amount
+    # Формула: Уровень = Корень из (XP / 50) + 1. 
+    # Каждый новый уровень требует всё больше XP.
+    new_level = int((user.xp / 50) ** 0.5) + 1
+    user.level = min(100, new_level) # Ограничиваем 100-м уровнем
+    db.session.commit()
+
+@app.context_processor
+def inject_user():
+    return dict(user=get_current_user())
+
+# --- Роуты (Авторизация) ---
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if User.query.filter_by(username=username).first():
+            flash('Пользователь с таким именем уже существует.')
+            return redirect(url_for('register'))
+        
+        is_first_user = User.query.count() == 0
+        new_user = User(username=username, password_hash=generate_password_hash(password), is_admin=is_first_user)
+        db.session.add(new_user) # УБРАЛ ДУБЛИКАТ db.session.add
+        db.session.commit()
+        session['user_id'] = new_user.id
+        return redirect(url_for('feed'))
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        user = User.query.filter_by(username=request.form['username']).first()
+        if user and check_password_hash(user.password_hash, request.form['password']):
+            session['user_id'] = user.id
+            return redirect(url_for('feed'))
+        flash('Неверное имя пользователя или пароль.')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('login'))
+
+# --- Роуты (Основной функционал) ---
+@app.route('/', methods=['GET'])
+def feed():
+    user = get_current_user()
+    if not user: return redirect(url_for('login'))
+    
+    # Делаем JOIN таблиц и берем только посты тех, у кого is_banned == False
+    posts = Post.query.join(User).filter(User.is_banned == False).order_by(Post.id.desc()).all()
+    return render_template('feed.html', active_page='feed', posts=posts)
+
+@app.route('/create_post', methods=['POST'])
+def create_post():
+    user = get_current_user()
+    if not user: return redirect(url_for('login'))
+    
+    content = request.form.get('content')
+    files = request.files.getlist('media') # Получаем список файлов
+    
+    saved_files = []
+    # Ограничиваем до 10 файлов
+    for file in files[:10]:
+        filename = save_media(file, "post")
+        if filename:
+            saved_files.append(filename)
+            
+    media_str = ",".join(saved_files) if saved_files else None
+
+    if content or media_str:
+        new_post = Post(content=content, media=media_str, author=user)
+        db.session.add(new_post)
+        add_xp(user, 10)
+        db.session.commit()
+    
+    return redirect(request.referrer or url_for('feed'))
+
+@app.route('/delete_post/<int:post_id>', methods=['POST'])
+def delete_post(post_id):
+    user = get_current_user()
+    post = Post.query.get_or_404(post_id)
+    if user and (post.user_id == user.id or user.is_admin):
+        # Удаляем все картинки этого поста из папки uploads
+        if post.media:
+            for file in post.media.split(','):
+                delete_old_file(file)
+        db.session.delete(post)
+        db.session.commit()
+    return redirect(request.referrer)
+
+@app.route('/edit_post/<int:post_id>', methods=['POST'])
+def edit_post(post_id):
+    user = get_current_user()
+    post = Post.query.get_or_404(post_id)
+    if user and post.user_id == user.id:
+        post.content = request.form.get('content')
+        db.session.commit()
+    return redirect(request.referrer or url_for('feed'))
+
+    # --- ДОБАВИТЬ РОУТ УДАЛЕНИЯ СООБЩЕНИЯ ---
+@app.route('/delete_message/<int:msg_id>', methods=['POST'])
+def delete_message(msg_id):
+    user = get_current_user()
+    if not user: return redirect(url_for('login'))
+    
+    msg = Message.query.get_or_404(msg_id)
+    # Удалить может только отправитель
+    if msg.sender_id == user.id:
+        # Если в сообщении были файлы — удаляем их из папки
+        if msg.media:
+            for file in msg.media.split(','):
+                delete_old_file(file)
+        db.session.delete(msg)
+        db.session.commit()
+    
+    return redirect(request.referrer)
+
+# --- Роут профиля (Теперь с функцией редактирования) ---
+@app.route('/profile', defaults={'user_id': None}, methods=['GET', 'POST'])
+@app.route('/profile/<int:user_id>', methods=['GET'])
+def profile(user_id):
+    current_user = get_current_user()
+    if not current_user: return redirect(url_for('login'))
+    
+    # Обновляем статус онлайн
+    current_user.last_seen = datetime.now()
+    db.session.commit()
+
+    target_user = User.query.get(user_id) if user_id else current_user
+    if not target_user: return "Пользователь не найден", 404
+
+    if request.method == 'POST' and not user_id:
+        # 1. Текстовые данные
+        current_user.username = request.form.get('username', current_user.username)
+        current_user.bio = request.form.get('bio', '')
+        current_user.gender = request.form.get('gender', '')
+        current_user.is_private = 'is_private' in request.form
+        
+        # 2. Дата рождения
+        bdate_str = request.form.get('birth_date')
+        if bdate_str:
+            try: current_user.birth_date = datetime.strptime(bdate_str, '%Y-%m-%d').date()
+            except: pass
+
+        # 3. Аватарка (с очисткой старой)
+        if 'avatar' in request.files:
+            file = request.files['avatar']
+            if file and file.filename != '':
+                new_avatar = save_media(file, "avatar")
+                if new_avatar:
+                    if current_user.avatar and current_user.avatar != 'default.png':
+                        delete_old_file(current_user.avatar)
+                    current_user.avatar = new_avatar
+
+        db.session.commit()
+        return redirect(url_for('profile'))
+
+    # Расчет прогресса уровня
+    # Расчет брал данные ТВОЕГО аккаунта
+    # Теперь расчет берет данные того, чей это профиль
+    xp_to_next = (target_user.level * 100) - target_user.xp
+    progress = (target_user.xp / (target_user.level * 100)) * 100
+
+    # Ограничиваем прогресс, чтобы он не был больше 100% или меньше 0%
+    progress = max(0, min(100, progress)) 
+
+    return render_template('profile.html', 
+                           profile_user=target_user, 
+                           user=current_user, 
+                           progress=progress, 
+                           xp_to_next=xp_to_next)
+
+@app.route('/messenger', methods=['GET', 'POST'])
+def messenger():
+    user = get_current_user()
+    if not user: return redirect(url_for('login'))
+
+    chat_with_id = request.args.get('chat_with', type=int)
+    chat_user = User.query.get(chat_with_id) if chat_with_id else None
+
+    if request.method == 'POST' and chat_user:
+        text = request.form.get('text', '')
+        # Обработка до 10 файлов в сообщении!
+        files = request.files.getlist('media')
+        saved_files = []
+        for file in files[:10]:
+            filename = save_media(file, "msg")
+            if filename: saved_files.append(filename)
+            
+        media_str = ",".join(saved_files) if saved_files else None
+
+        if text or media_str:
+            msg = Message(sender_id=user.id, receiver_id=chat_user.id, text=text, media=media_str)
+            db.session.add(msg)
+            add_xp(user, 2)
+            db.session.commit()
+        return redirect(url_for('messenger', chat_with=chat_user.id))
+
+    # Вычисляем активные диалоги
+    msg_users_ids = set()
+    all_my_msgs = Message.query.filter((Message.sender_id == user.id) | (Message.receiver_id == user.id)).all()
+    for m in all_my_msgs:
+        if m.sender_id != user.id: msg_users_ids.add(m.sender_id)
+        if m.receiver_id != user.id: msg_users_ids.add(m.receiver_id)
+        
+    active_users = User.query.filter(User.id.in_(msg_users_ids)).all()
+    my_friends = user.friends.all() # Для поиска
+
+    messages = []
+    if chat_user:
+        messages = Message.query.filter(
+            ((Message.sender_id == user.id) & (Message.receiver_id == chat_user.id)) |
+            ((Message.sender_id == chat_user.id) & (Message.receiver_id == user.id))
+        ).order_by(Message.timestamp).all()
+
+    return render_template('messenger.html', active_page='messenger', active_users=active_users, friends=my_friends, chat_user=chat_user, messages=messages)
+
+@app.route('/settings')
+def settings():
+    if not get_current_user(): return redirect(url_for('login'))
+    return render_template('settings.html', active_page='settings')
+
+@app.route('/friends')
+def friends_page():
+    user = get_current_user()
+    if not user: return redirect(url_for('login'))
+    
+    all_users = User.query.filter(User.id != user.id).all()
+    my_friends = user.friends.all()
+    
+    # Отсеиваем тех, кто уже в друзьях, чтобы предложить их в блоке "Найти друзей"
+    discover_users = [u for u in all_users if u not in my_friends]
+
+    return render_template('friends.html', active_page='friends', my_friends=my_friends, discover_users=discover_users)
+
+@app.route('/toggle_friend/<int:user_id>', methods=['POST'])
+def toggle_friend(user_id):
+    user = get_current_user()
+    if not user: return redirect(url_for('login'))
+    
+    target = User.query.get_or_404(user_id)
+    if target.id == user.id: return redirect(request.referrer)
+
+    if user.is_following(target):
+        user.unfollow(target)
+    else:
+        user.follow(target)
+        add_xp(user, 5)
+
+    db.session.commit()
+    return redirect(request.referrer or url_for('friends_page'))
+
+
+
+
+
+# --- РОУТЫ АДМИН-ПАНЕЛИ ---
+@app.route('/admin')
+@admin_required
+def admin_panel():
+    users = User.query.all()
+    posts = Post.query.order_by(Post.id.desc()).all()
+    return render_template('admin.html', active_page='admin', all_users=users, all_posts=posts)
+
+@app.route('/admin/toggle_admin/<int:user_id>', methods=['POST'])
+@admin_required
+def toggle_admin(user_id):
+    current_admin = get_current_user()
+    target_user = User.query.get_or_404(user_id)
+    
+    # ИЕРАРХИЯ: Только Главный админ (ID 1) может назначать других админов
+    if current_admin.id != 1:
+        flash('Только владелец (ID 1) может управлять правами доступа.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    if target_user.id != 1: # Нельзя снять админку с главного
+        target_user.is_admin = not target_user.is_admin
+        db.session.commit()
+    return redirect(url_for('admin_panel'))
+
+# --- Обновленный роут Ленты (скрывает посты забаненных) ---
+
+
+# --- Обновленные роуты банов (умный редирект) ---
+@app.route('/admin/ban/<int:user_id>', methods=['POST'])
+@admin_required
+def ban_user(user_id):
+    current_admin = get_current_user()
+    target_user = User.query.get_or_404(user_id)
+    
+    # ИЕРАРХИЯ: 
+    # 1. Нельзя забанить самого себя.
+    # 2. Нельзя забанить Главного админа (ID 1).
+    # 3. Обычный админ не может забанить другого админа.
+    if target_user.id == 1:
+        flash('Невозможно заблокировать владельца системы.', 'error')
+        return redirect(request.referrer or url_for('admin_panel'))
+    
+    if target_user.is_admin and current_admin.id != 1:
+        flash('Только владелец может блокировать других администраторов.', 'error')
+        return redirect(request.referrer or url_for('admin_panel'))
+
+    if target_user.id == current_admin.id:
+        flash('Вы не можете заблокировать самого себя.', 'error')
+        return redirect(request.referrer or url_for('admin_panel'))
+        
+    reason = request.form.get('reason', 'Нарушение правил сообщества')
+    duration = request.form.get('duration')
+    
+    target_user.is_banned = True
+    target_user.ban_reason = reason
+    
+    if duration and duration != 'perm':
+        target_user.ban_until = datetime.now() + timedelta(days=int(duration))
+    else:
+        target_user.ban_until = None
+        
+    db.session.commit()
+    return redirect(request.referrer or url_for('admin_panel'))
+
+@app.route('/admin/unban/<int:user_id>', methods=['POST'])
+@admin_required
+def unban_user(user_id):
+    target_user = User.query.get_or_404(user_id)
+    target_user.is_banned = False
+    target_user.ban_reason = None
+    target_user.ban_until = None
+    db.session.commit()
+    return redirect(request.referrer or url_for('admin_panel'))
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\admin.html
+==================================================
+
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header" style="color: #e67e22;">
+    <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Панель управления (Admin)
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div style="background: #fdf2f2; color: #e41e3f; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        {{ messages[0][1] }}
+    </div>
+    {% endif %}
+{% endwith %}
+
+<div class="card">
+    <h3 style="margin-top: 0;">Управление пользователями</h3>
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+    {% for u in all_users %}
+        <div class="flex items-center" style="justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
+            
+            <div class="flex items-center gap-10" style="opacity: {% if u.is_banned %}0.5{% else %}1{% endif %};">
+                <div class="avatar" style="width: 30px; height: 30px; font-size: 0.8rem;">{{ u.username[0]|upper }}</div>
+                <div>
+                    <a href="/profile/{{ u.id }}" style="font-weight: 600; color: {% if u.is_admin %}#e67e22{% endif %};">{{ u.username }}</a>
+                    {% if u.is_admin %}<span style="font-size: 0.7rem; background: #e67e22; color: white; padding: 2px 5px; border-radius: 5px;">Admin</span>{% endif %}
+                    {% if u.is_banned %}<span style="font-size: 0.7rem; background: #e41e3f; color: white; padding: 2px 5px; border-radius: 5px;">Banned</span>{% endif %}
+                </div>
+            </div>
+
+            <div class="flex gap-10 items-center">
+                {% if u.id != user.id %}
+                    <form action="/admin/toggle_admin/{{ u.id }}" method="POST" style="margin: 0;">
+                        <button type="submit" class="btn-primary" style="background: var(--surface); color: var(--text-main); border: 1px solid var(--border); padding: 5px 10px; font-size: 0.8rem;">
+                            {% if u.is_admin %}Снять админку{% else %}Дать админку{% endif %}
+                        </button>
+                    </form>
+                    
+                    {% if not u.is_admin %}
+                        {% if u.is_banned %}
+                            <form action="/admin/unban/{{ u.id }}" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn-primary" style="background: #2ecc71; padding: 5px 10px; font-size: 0.8rem;">Разбанить</button>
+                            </form>
+                        {% else %}
+                            <button onclick="document.getElementById('banModal-{{ u.id }}').style.display='flex'" class="btn-primary" style="background: #e41e3f; padding: 5px 10px; font-size: 0.8rem;">Забанить</button>
+                            
+                            <div id="banModal-{{ u.id }}" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center;">
+                                <div class="card" style="width: 90%; max-width: 400px; position: relative;">
+                                    <span onclick="document.getElementById('banModal-{{ u.id }}').style.display='none'" style="position: absolute; right: 20px; top: 15px; cursor: pointer; font-size: 1.5rem;">&times;</span>
+                                    <h3>Блокировка: {{ u.username }}</h3>
+                                    <form action="/admin/ban/{{ u.id }}" method="POST">
+                                        <label style="font-size: 0.9rem;">Причина:</label>
+                                        <input type="text" name="reason" class="input-text" placeholder="Спам, оскорбления..." required>
+                                        <label style="font-size: 0.9rem;">Срок:</label>
+                                        <select name="duration" class="input-text">
+                                            <option value="1">1 день</option>
+                                            <option value="7">7 дней</option>
+                                            <option value="30">30 дней</option>
+                                            <option value="perm" style="color: red; font-weight: bold;">Навсегда (Пермач)</option>
+                                        </select>
+                                        <button type="submit" class="btn-primary" style="background: #e41e3f; width: 100%;">Выдать бан</button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\banned.html
+==================================================
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Аккаунт заблокирован | Moxie</title>
+    <style>
+        body { margin: 0; background: #f0f2f5; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; color: #050505; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; border-top: 5px solid #e41e3f; }
+        .btn { display: inline-block; background: #e41e3f; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; margin-top: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <svg viewBox="0 0 24 24" style="width: 60px; height: 60px; stroke: #e41e3f; fill: none; stroke-width: 2;"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+        <h2>Ваш аккаунт заблокирован</h2>
+        <p style="color: #65676B;">Доступ к социальной сети ограничен администратором.</p>
+        
+        <div style="background: #fdf2f2; padding: 15px; border-radius: 8px; text-align: left; margin-top: 20px;">
+            <strong>Причина:</strong><br> {{ user.ban_reason }}<br><br>
+            <strong>Блокировка истекает:</strong><br> 
+            {% if user.ban_until %}
+                {{ user.ban_until.strftime('%d.%m.%Y %H:%M') }}
+            {% else %}
+                Перманентно (Навсегда)
+            {% endif %}
+        </div>
+        
+        <a href="/logout" class="btn">Выйти из аккаунта</a>
+    </div>
+</body>
+>>>>>>> 689518a (fix: remove local storage and init git)
+</html>
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\base.html
+==================================================
+
+<!-- base.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moxie</title>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --surface: #ffffff;
+            --text-main: #050505;
+            --text-muted: #65676B;
+            --primary: #1877f2;
+            --primary-hover: #166fe5;
+            --border: #ced0d4;
+            --radius: max(0px, min(8px, calc((100vw - 4px - 100%) * 9999))); /* Универсальное скругление */
+            --radius-btn: 6px;
+        }
+
+        * { box-sizing: border-box; }
+        body { margin: 0; background-color: var(--bg-color); color: var(--text-main); font-family: -apple-system, system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden;}
+        a { text-decoration: none; color: inherit; }
+
+        .sidebar { width: 280px; background: var(--surface); padding: 20px; display: flex; flex-direction: column; gap: 5px; border-right: 1px solid var(--border); }
+        .logo { font-size: 1.8rem; font-weight: 800; color: var(--primary); margin-bottom: 20px; padding: 0 10px; }
+        .nav-link { padding: 12px 15px; border-radius: var(--radius-btn); font-size: 1.1rem; font-weight: 500; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
+        .nav-link:hover { background: var(--bg-color); }
+        .nav-link.active { background: rgba(24, 119, 242, 0.1); color: var(--primary); }
+
+        .main-wrapper { flex: 1; display: flex; justify-content: center; overflow-y: auto; }
+        .main-content { width: 100%; max-width: 680px; padding: 20px; }
+
+        .card { background: var(--surface); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); padding: 15px; margin-bottom: 15px; border: 1px solid var(--border); }
+        .page-header { font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; color: var(--text-main); }
+
+        .btn-primary { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: var(--radius-btn); font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .input-text { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-btn); font-size: 1rem; margin-bottom: 10px; background: var(--bg-color); }
+        .input-text:focus { outline: none; border-color: var(--primary); background: var(--surface); }
+
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; object-fit: cover; }
+        .avatar-lg { width: 100px; height: 100px; font-size: 2rem; margin: 0 auto 15px; }
+        
+        
+        /* Level Badge */
+        .lvl-badge { 
+            padding: 3px 8px; 
+            border-radius: 12px; 
+            font-size: 0.8rem; 
+            font-weight: bold; 
+            margin-left: 5px; 
+            color: white; 
+            display: inline-block; 
+            text-shadow: 0 1px 1px rgba(0,0,0,0.2); 
+        }
+        
+        .tier-0 { background: #95a5a6; } /* 1-9: Серый (Новичок) */
+        .tier-1 { background: #2ecc71; } /* 10-19: Зеленый */
+        .tier-2 { background: #3498db; } /* 20-29: Синий */
+        .tier-3 { background: #9b59b6; } /* 30-39: Фиолетовый */
+        .tier-4 { background: #e67e22; } /* 40-49: Оранжевый */
+        .tier-5 { background: #e74c3c; } /* 50-59: Красный */
+        .tier-6 { background: #fd79a8; } /* 60-69: Розовый */
+        .tier-7 { background: #00cec9; } /* 70-79: Бирюзовый */
+        .tier-8 { background: linear-gradient(45deg, #bdc3c7, #2c3e50); } /* 80-89: Платина */
+        .tier-9 { background: linear-gradient(45deg, #f1c40f, #e67e22); box-shadow: 0 0 8px rgba(241, 196, 15, 0.5); } /* 90-99: Золото */
+        .tier-10 { background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3); box-shadow: 0 0 10px rgba(255, 0, 255, 0.5); } /* 100: Максимум! */
+        
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .gap-10 { gap: 10px; }
+        .text-muted { color: var(--text-muted); font-size: 0.9rem; }
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-content {
+            display: none; position: absolute; right: 0; top: 100%;
+            background-color: var(--surface); min-width: 150px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1);
+            border: 1px solid var(--border); border-radius: 8px; z-index: 10; overflow: hidden;
+        }
+        .dropdown-content button {
+            color: var(--text-main); padding: 12px 16px; text-decoration: none;
+            display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+            font-size: 0.95rem;
+        }
+        .dropdown-content button:hover { background-color: var(--bg-color); }
+        .show { display: block; }
+        
+        /* Иконки */
+        .icon { 
+            width: 18px; 
+            height: 18px; 
+            stroke: currentColor; 
+            stroke-width: 2; 
+            fill: none; 
+            stroke-linecap: round; 
+            stroke-linejoin: round; 
+            display: inline-block;
+            vertical-align: middle; 
+            flex-shrink: 0; 
+        }
+
+        /* Анимированная подсказка (Тултип) */
+        .custom-tooltip {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .custom-tooltip .tooltip-text {
+            visibility: hidden;
+            opacity: 0;
+            width: max-content;
+            background-color: var(--text-main);
+            color: var(--bg-color);
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 10px;
+            position: absolute;
+            z-index: 100;
+            bottom: 130%; /* Появляется над иконкой */
+            left: 50%;
+            transform: translateX(-50%) translateY(10px); /* Смещена вниз для анимации выезда */
+            transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+            font-size: 0.8rem;
+            font-weight: normal;
+            box-shadow: 0px 4px 8px rgba(0,0,0,0.2);
+            pointer-events: none; /* Чтобы мышка не цеплялась за саму подсказку */
+        }
+
+        /* Маленький треугольник-стрелочка вниз */
+        .custom-tooltip .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: var(--text-main) transparent transparent transparent;
+        }
+
+        /* Что происходит при наведении */
+        .custom-tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+            transform: translateX(-50%) translateY(0); /* Выезжает наверх */
+        }
+
+        a, button, input[type="submit"], input[type="checkbox"], label, .avatar, .media-item, .custom-tooltip {
+            cursor: pointer !important;
+        }
+
+        .online-indicator {
+            position: absolute;
+            bottom: 5%;
+            right: 5%;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .avatar-lg + .online-indicator { width: 22px; height: 22px; border-width: 3px; }
+    </style>
+</head>
+<body>
+    {% if user %}
+    <nav class="sidebar">
+        <div class="logo"><a href="/">Moxie</a></div>
+        <a href="/profile">
+            <div class="card flex items-center gap-10" style="margin-bottom: 20px; padding: 10px;">
+                {% if user.avatar %}
+                    {% if 'http' in user.avatar %}
+                        <img src="{{ user.avatar }}" class="avatar" style="object-fit: cover;">
+                    {% else %}
+                        <img src="{{ url_for('static', filename='uploads/' + user.avatar) }}" class="avatar" style="object-fit: cover;">
+                    {% endif %}
+                {% else %}
+                    <div class="avatar">{{ user.username[0]|upper }}</div>
+                {% endif %}
+                
+                <div style="overflow: hidden;">
+                    <div style="font-weight: 600; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">{{ user.username }}</div>
+                    <div class="text-muted">
+                        <span class="lvl-badge tier-{{ user.level // 10 }}" style="margin-left: 0;">Lvl {{ user.level }}</span>
+                    </div>
+                </div>
+            </div>
+        </a>
+        <a href="/" class="nav-link {% if active_page == 'feed' %}active{% endif %}">Лента</a>
+        <a href="/friends" class="nav-link {% if active_page == 'friends' %}active{% endif %}">Друзья</a>
+        <a href="/messenger" class="nav-link {% if active_page == 'messenger' %}active{% endif %}">Сообщения</a>
+        <a href="/profile" class="nav-link {% if active_page == 'profile' %}active{% endif %}">Мой профиль</a>
+        <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}">Настройки</a>
+        
+        {% if user.is_admin %}
+            <a href="/admin" class="nav-link {% if active_page == 'admin' %}active{% endif %}" style="color: #e67e22; border-top: 1px solid var(--border); margin-top: 10px; border-radius: 0;">
+                <svg class="icon" viewBox="0 0 24 24" style="margin-right: 8px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Админ-панель
+            </a>
+        {% endif %}
+        
+        <a href="/logout" class="nav-link" style="color: #e41e3f; margin-top: auto;">Выйти</a>
+    </nav>
+    {% endif %}
+
+    <div class="main-wrapper">
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        // Закрытие выпадающего меню при клике вне его
+        window.onclick = function(event) {
+            if (!event.target.matches('.dropbtn') && !event.target.closest('.dropbtn')) {
+                var dropdowns = document.getElementsByClassName("dropdown-content");
+                for (var i = 0; i < dropdowns.length; i++) {
+                    var openDropdown = dropdowns[i];
+                    if (openDropdown.classList.contains('show')) {
+                        openDropdown.classList.remove('show');
+                    }
+                }
+            }
+        }
+        function toggleDropdown(id) {
+            document.getElementById("dropdown-" + id).classList.toggle("show");
+        }
+    </script>
+</body>
+</html>
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\components.html
+==================================================
+
+<!-- components.html -->
+{% macro post_form(user, is_hidden=false) %}
+<div id="postFormContainer" class="card" style="{% if is_hidden %}display: none;{% endif %} padding: 0; overflow: hidden; border: 1px solid var(--border);">
+    <form method="POST" action="/create_post" enctype="multipart/form-data" style="margin: 0;">
+        <div class="flex" style="padding: 15px;">
+            {% if user.avatar != 'default.png' %}
+                <img src="/static/uploads/{{ user.avatar }}" class="avatar" style="object-fit: cover;">
+            {% else %}
+                <div class="avatar">{{ user.username[0]|upper }}</div>
+            {% endif %}
+            <textarea name="content" class="input-text" placeholder="Что нового, {{ user.username }}?" style="border: none; background: transparent; resize: none; min-height: 60px; margin-bottom: 0; font-size: 1.1rem; flex: 1;"></textarea>
+        </div>
+        
+        <div id="media-preview-container" style="display: none; padding: 0 15px 15px 65px; position: relative;">
+            <div id="media-preview-content" style="border-radius: 12px; overflow: hidden; width: 100%;"></div>
+            <button type="button" onclick="clearMedia()" style="position: absolute; top: 5px; right: 25px; background: rgba(0,0,0,0.6); color: white; border: none; border-radius: 50%; width: 25px; height: 25px; cursor: pointer; z-index: 5;">&times;</button>
+        </div>
+
+        <div class="flex items-center" style="justify-content: space-between; padding: 10px 15px; border-top: 1px solid var(--border); background: var(--bg-color);">
+            <label style="cursor: pointer; color: var(--primary); font-weight: 600; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 20px; transition: 0.2s;" onmouseover="this.style.background='rgba(24, 119, 242, 0.1)'" onmouseout="this.style.background='transparent'">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Медиа (до 10)
+                <input type="file" name="media" id="post-media-input" accept="image/*,video/*" multiple style="display: none;" onchange="previewPostMedia(event)">
+            </label>
+            <button type="submit" class="btn-primary" style="padding: 8px 20px;">Опубликовать</button>
+        </div>
+    </form>
+</div>
+
+<script>
+function previewPostMedia(event) {
+    const files = event.target.files;
+    if (files.length === 0) return;
+    if (files.length > 10) { alert("Максимум 10 файлов!"); event.target.value = ''; return; }
+    
+    const container = document.getElementById('media-preview-container');
+    const content = document.getElementById('media-preview-content');
+    content.innerHTML = '';
+    
+    // Сетка для галереи
+    content.style.display = 'grid';
+    content.style.gridTemplateColumns = files.length > 1 ? '1fr 1fr' : '1fr';
+    content.style.gap = '5px';
+
+    for(let i=0; i<files.length; i++) {
+        const url = URL.createObjectURL(files[i]);
+        if (files[i].type.startsWith('video/')) {
+            content.innerHTML += `<video src="${url}" controls style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px;"></video>`;
+        } else {
+            content.innerHTML += `<img src="${url}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px;">`;
+        }
+    }
+    container.style.display = 'block';
+}
+
+function clearMedia() {
+    document.getElementById('post-media-input').value = '';
+    document.getElementById('media-preview-container').style.display = 'none';
+    document.getElementById('media-preview-content').innerHTML = '';
+}
+
+function showEditForm(postId) {
+    document.getElementById('post-content-' + postId).style.display = 'none';
+    document.getElementById('post-edit-form-' + postId).style.display = 'block';
+}
+function hideEditForm(postId) {
+    document.getElementById('post-content-' + postId).style.display = 'block';
+    document.getElementById('post-edit-form-' + postId).style.display = 'none';
+}
+</script>
+{% endmacro %}
+
+{% macro render_avatar(target_user, extra_class='', show_status=true) %}
+<div style="position: relative; display: inline-block; vertical-align: middle;">
+    {% if target_user.is_banned %}
+        <div class="avatar {{ extra_class }}" style="background: #e41e3f; display: flex; align-items: center; justify-content: center; border-radius: 50%;">
+            <svg viewBox="0 0 24 24" style="width: 70%; height: 70%; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round;">
+                <circle cx="12" cy="12" r="11"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+        </div>
+    {% elif target_user.avatar %}
+        {# ПРОВЕРКА: ссылка это или локальный файл #}
+        {% if 'http' in target_user.avatar %}
+            <img src="{{ target_user.avatar }}" class="avatar {{ extra_class }}" style="object-fit: cover; border-radius: 50%; border: 1px solid var(--border);">
+        {% else %}
+            <img src="{{ url_for('static', filename='uploads/' + target_user.avatar) }}" class="avatar {{ extra_class }}" style="object-fit: cover; border-radius: 50%; border: 1px solid var(--border);">
+        {% endif %}
+    {% else %}
+        <div class="avatar {{ extra_class }}" style="border-radius: 50%; border: 1px solid var(--border);">{{ target_user.username[0]|upper }}</div>
+    {% endif %}
+
+    {% if show_status and not target_user.is_banned %}
+        <div style="position: absolute; bottom: 5%; right: 5%; width: 20%; height: 20%; min-width: 8px; min-height: 8px; max-width: 20px; max-height: 20px; border-radius: 50%; border: 2px solid var(--surface); background: {% if target_user.is_online() %}#2ecc71{% else %}#95a5a6{% endif %}; box-shadow: 0 1px 2px rgba(0,0,0,0.2);" title="{% if target_user.is_online() %}В сети{% else %}Не в сети{% endif %}"></div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+{% macro post_menu(post, current_user) %}
+    {% if post.user_id == current_user.id or current_user.is_admin %}
+    <div class="dropdown">
+        <button class="dropbtn" onclick="toggleDropdown({{ post.id }})" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 5px;">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>
+        <div id="dropdown-{{ post.id }}" class="dropdown-content">
+            
+            {% if post.user_id == current_user.id %}
+            <button onclick="showEditForm({{ post.id }})"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Редактировать</button>
+            {% endif %}
+            
+            <form action="/delete_post/{{ post.id }}" method="POST" style="margin: 0;">
+                <button type="submit" style="color: #e41e3f;"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    {% if post.user_id != current_user.id and current_user.is_admin %}Удалить (Админ){% else %}Удалить{% endif %}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+{% endmacro %}
+
+{% macro render_media(media_str) %}
+    {% if media_str %}
+        {% set files = media_str.split(',') %}
+        <div class="media-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 4px; margin-top: 5px; border-radius: 12px; overflow: hidden;">
+        {% for filename in files %}
+            {% set ext = filename.split('.')[-1]|lower %}
+            <div class="media-item" style="position: relative; aspect-ratio: 1/1; background: #000; cursor: pointer;">
+                {# Определяем URL: либо напрямую, либо через static #}
+                {% set media_url = filename if 'http' in filename else url_for('static', filename='uploads/' + filename) %}
+                
+                {% if ext in ['mp4', 'webm', 'mov'] %}
+                    <video src="{{ media_url }}" style="width: 100%; height: 100%; object-fit: cover;"></video>
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; background: rgba(0,0,0,0.5); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; pointer-events: none;">▶</div>
+                {% else %}
+                    <img src="{{ media_url }}" style="width: 100%; height: 100%; object-fit: cover;" onclick="openGallery('{{ media_str }}', {{ loop.index0 }})">
+                {% endif %}
+            </div>
+        {% endfor %}
+        </div>
+    {% endif %}
+{% endmacro %}
+
+{% macro post_menu(post, current_user) %}
+    {% if post.user_id == current_user.id or current_user.is_admin %}
+    <div class="dropdown">
+        <button class="dropbtn" onclick="toggleDropdown({{ post.id }})" style="background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 5px;">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>
+        <div id="dropdown-{{ post.id }}" class="dropdown-content">
+            
+            {% if post.user_id == current_user.id %}
+            <button onclick="showEditForm({{ post.id }})"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Редактировать</button>
+            {% endif %}
+            
+            <form action="/delete_post/{{ post.id }}" method="POST" style="margin: 0;">
+                <button type="submit" style="color: #e41e3f;"><svg class="icon" viewBox="0 0 24 24" style="margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    {% if post.user_id != current_user.id and current_user.is_admin %}Удалить (Админ){% else %}Удалить{% endif %}
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+{% endmacro %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\feed.html
+==================================================
+
+<!-- feed.html -->
+{% extends "base.html" %}
+{% import 'components.html' as comp %}
+{% block content %}
+<div class="page-header">Главная лента</div>
+
+{{ comp.post_form(user) }}
+
+{% for post in posts %}
+<div class="card">
+    <div class="flex items-center" style="justify-content: space-between; margin-bottom: 10px;">
+        <div class="flex items-center gap-10">
+            <a href="/profile/{{ post.author.id }}">
+                {{ comp.render_avatar(post.author) }}
+            </a>
+            <div>
+                <div>
+                    <a href="/profile/{{ post.author.id }}" style="font-weight: 600;">{{ post.author.username }}</a>
+                    <span class="lvl-badge tier-{{ post.author.level // 10 }}">Lvl {{ post.author.level }}</span>
+                </div>
+                <div class="text-muted">{{ post.timestamp.strftime('%d.%m.%Y %H:%M') }}</div>
+            </div>
+        </div>
+        
+        {{ comp.post_menu(post, user) }}
+    </div>
+    
+    <div id="post-content-{{ post.id }}">
+        {% if post.content %}
+            <div style="line-height: 1.5; white-space: pre-wrap; font-size: 1.05rem;">{{ post.content }}</div>
+        {% endif %}
+        {{ comp.render_media(post.media) }}
+    </div>
+
+    <form id="post-edit-form-{{ post.id }}" action="/edit_post/{{ post.id }}" method="POST" style="display: none; margin-top: 10px;">
+        <textarea name="content" class="input-text" rows="3" style="resize: vertical;">{{ post.content if post.content else '' }}</textarea>
+        <div style="text-align: right; margin-top: 5px;">
+            <button type="button" class="btn-primary" style="background: var(--surface); color: var(--text-main); border: 1px solid var(--border);" onclick="hideEditForm({{ post.id }})">Отмена</button>
+            <button type="submit" class="btn-primary">Сохранить</button>
+        </div>
+    </form>
+</div>
+{% else %}
+<div class="card" style="text-align: center; color: var(--text-muted);">Постов пока нет. Будьте первым!</div>
+{% endfor %}
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\friends.html
+==================================================
+
+<!-- friends.html -->
+{% extends "base.html" %}
+{% import 'components.html' as comp %}
+{% block content %}
+<div class="page-header">Друзья</div>
+
+<div class="card">
+    <h3 style="margin-top: 0;">Мои друзья ({{ my_friends|length }})</h3>
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+    {% for f in my_friends %}
+        <div class="flex items-center gap-10" style="justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
+            <div class="flex items-center gap-10">
+                <a href="/profile/{{ f.id }}" style="display: flex;">
+                    {{ comp.render_avatar(f) }}
+                </a>
+                <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px;">
+                    <a href="/profile/{{ f.id }}" style="font-weight: 600;">{{ f.username }}</a>
+                    <span class="lvl-badge tier-{{ f.level // 10 }}" style="margin-left: 0;">Lvl {{ f.level }}</span>
+                </div>
+            </div>
+            <div class="flex gap-10">
+                <a href="/messenger?chat_with={{ f.id }}" class="btn-primary" style="background: var(--surface); color: var(--primary); border: 1px solid var(--primary); padding: 8px 15px;">Написать</a>
+                <form action="/toggle_friend/{{ f.id }}" method="POST" style="margin: 0;">
+                    <button type="submit" class="btn-primary" style="background: #e41e3f; padding: 8px 15px;">Удалить</button>
+                </form>
+            </div>
+        </div>
+    {% else %}
+        <p class="text-muted">У вас пока нет друзей.</p>
+    {% endfor %}
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-top: 0;">Найти друзей</h3>
+    <div style="display: flex; flex-direction: column; gap: 15px;">
+    {% for u in discover_users %}
+        <div class="flex items-center gap-10" style="justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
+            <div class="flex items-center gap-10">
+                <a href="/profile/{{ u.id }}" style="display: flex;">
+                    {{ comp.render_avatar(u) }}
+                </a>
+                <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px;">
+                    <a href="/profile/{{ u.id }}" style="font-weight: 600;">{{ u.username }}</a>
+                    <span class="lvl-badge tier-{{ u.level // 10 }}" style="margin-left: 0;">Lvl {{ u.level }}</span>
+                </div>
+            </div>
+            <form action="/toggle_friend/{{ u.id }}" method="POST" style="margin: 0;">
+                <button type="submit" class="btn-primary" style="padding: 8px 15px;">Добавить в друзья</button>
+            </form>
+        </div>
+    {% else %}
+        <p class="text-muted" style="text-align: center;">Больше нет пользователей для добавления.</p>
+    {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\groups.html
+==================================================
+
+<!-- groups.html -->
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; margin-top: 20px; }
+    .card { padding: 20px; text-align: center; transition: 0.3s; }
+    .card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0, 243, 255, 0.4); }
+    .join-btn { background: rgba(255,0,255,0.2); border: 1px solid var(--magenta); color: white; padding: 8px 20px; border-radius: 20px; margin-top: 15px; cursor: pointer; }
+</style>
+<h2 class="neon-cyan">Discover Communities</h2>
+<div class="grid">
+    <div class="card glass">
+        <h3 class="neon-magenta">Python Runners</h3>
+        <p>12k Members</p>
+        <button class="join-btn">Join Grid</button>
+    </div>
+    <div class="card glass">
+        <h3 class="neon-cyan">Synthwave Audio</h3>
+        <p>8k Members</p>
+        <button class="join-btn">Join Grid</button>
+    </div>
+    <div class="card glass">
+        <h3 class="neon-magenta">UI/UX Holographics</h3>
+        <p>24k Members</p>
+        <button class="join-btn">Join Grid</button>
+    </div>
+</div>
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\login.html
+==================================================
+
+<!-- login.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">Добро пожаловать в Moxie</div>
+<div class="card" style="margin-top: 50px;">
+    <h2>Вход</h2>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}<p style="color: red;">{{ messages[0] }}</p>{% endif %}
+    {% endwith %}
+    <form method="POST" action="/login">
+        <input type="text" name="username" class="input-text" placeholder="Имя пользователя" required>
+        <input type="password" name="password" class="input-text" placeholder="Пароль" required>
+        <button type="submit" class="btn-primary" style="width: 100%;">Войти</button>
+    </form>
+    <p style="text-align: center; margin-top: 20px;">
+        Нет аккаунта? <a href="/register" style="color: var(--primary);">Регистрация</a>
+    </p>
+</div>
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\messenger.html
+==================================================
+
+{% extends "base.html" %}
+{% import 'components.html' as comp %}
+{% block content %}
+<style>
+    /* Основной контейнер */
+    .chat-container { 
+        display: flex; 
+        height: 80vh; 
+        border: 1px solid var(--border); 
+        border-radius: 16px; 
+        background: var(--surface); 
+        overflow: hidden; 
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+    }
+
+    /* Боковая панель */
+    .chat-sidebar { 
+        width: 300px; 
+        border-right: 1px solid var(--border); 
+        background: var(--bg-color); 
+        display: flex; 
+        flex-direction: column; 
+    }
+    .chat-sidebar::-webkit-scrollbar { display: none; }
+    .chat-sidebar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    .sidebar-header { padding: 15px; border-bottom: 1px solid var(--border); background: var(--surface); }
+
+    .chat-user { 
+        padding: 12px 16px; 
+        border-bottom: 1px solid var(--border); 
+        transition: 0.2s; 
+        text-decoration: none; 
+        color: inherit; 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+    }
+    .chat-user:hover { background: rgba(0,0,0,0.03); }
+    .chat-user.active { background: var(--surface); border-left: 4px solid var(--primary); }
+
+    /* Основная зона чата */
+    .chat-main { flex: 1; display: flex; flex-direction: column; background: var(--surface); position: relative; }
+    
+    .chat-header { 
+        padding: 12px 20px; 
+        border-bottom: 1px solid var(--border); 
+        background: var(--surface); 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+        z-index: 10;
+    }
+
+    .chat-messages { 
+        flex: 1; 
+        padding: 20px; 
+        overflow-y: auto; 
+        display: flex; 
+        flex-direction: column; 
+        gap: 10px; 
+    }
+    .chat-messages::-webkit-scrollbar { display: none; }
+    .chat-messages { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Пузыри сообщений */
+    .msg-bubble { 
+        padding: 10px 14px; 
+        border-radius: 18px; 
+        max-width: 70%; 
+        position: relative; 
+        transition: transform 0.2s ease;
+    }
+    .msg-mine { 
+        background: var(--primary); 
+        color: white; 
+        align-self: flex-end; 
+        border-bottom-right-radius: 4px; 
+    }
+    .msg-theirs { 
+        background: var(--bg-color); 
+        color: var(--text-main); 
+        align-self: flex-start; 
+        border-bottom-left-radius: 4px; 
+        border: 1px solid var(--border);
+    }
+
+    /* Иконка удаления на ховер */
+    .delete-btn {
+        opacity: 0;
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #e41e3f;
+        cursor: pointer;
+        padding: 5px;
+        transition: opacity 0.2s ease;
+    }
+    .msg-mine .delete-btn { left: -35px; }
+    .msg-theirs .delete-btn { right: -35px; }
+    .msg-bubble:hover .delete-btn { opacity: 1; }
+
+    /* Сетка медиа */
+    .media-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+        gap: 4px; 
+        margin-bottom: 6px; 
+        border-radius: 12px; 
+        overflow: hidden; 
+    }
+    .media-item { 
+        position: relative; 
+        aspect-ratio: 1; 
+        background: #000; 
+        cursor: pointer; 
+        overflow: hidden; 
+    }
+    .media-item img, .media-item video { width: 100%; height: 100%; object-fit: cover; transition: 0.3s; }
+    .media-item:hover img { transform: scale(1.05); }
+
+    /* Кастомный оверлей плеера */
+    .video-hint {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.15);
+        color: white;
+    }
+    .video-hint svg { width: 40px; height: 40px; fill: white; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+
+    /* Ввод сообщения */
+    .chat-input-area { 
+        padding: 15px 20px; 
+        border-top: 1px solid var(--border); 
+        background: var(--surface); 
+        display: flex; 
+        gap: 12px; 
+        align-items: center; 
+    }
+
+    /* Лайтбокс / Галерея */
+    #imageLightbox { 
+        display: none; 
+        position: fixed; 
+        inset: 0; 
+        background: rgba(0,0,0,0.95); 
+        z-index: 3000; 
+        align-items: center; 
+        justify-content: center; 
+        opacity: 0; 
+        transition: 0.3s; 
+        backdrop-filter: blur(10px); 
+    }
+    .nav-btn { 
+        position: absolute; 
+        top: 50%; 
+        transform: translateY(-50%); 
+        background: rgba(255,255,255,0.1); 
+        border: none; 
+        color: white; 
+        padding: 15px; 
+        cursor: pointer; 
+        border-radius: 50%; 
+        font-size: 20px; 
+    }
+    .nav-btn:hover { background: rgba(255,255,255,0.2); }
+</style>
+
+<div class="chat-container">
+    <div class="chat-sidebar">
+        <div class="sidebar-header">
+            <input type="text" id="friendSearch" class="input-text" style="margin: 0; border-radius: 20px;" placeholder="Поиск друга..." onkeyup="filterFriends()">
+        </div>
+        <div id="active-chats" style="flex: 1; overflow-y: auto;">
+            {% for u in active_users %}
+            <a href="/messenger?chat_with={{ u.id }}" class="chat-user {% if chat_user and chat_user.id == u.id %}active{% endif %}">
+                {{ comp.render_avatar(u) }}
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ u.username }}</div>
+                    {% if u.is_online() %}
+                        <span style="color: #2ecc71; font-size: 0.7rem;">● Online</span>
+                    {% else %}
+                        <span style="color: var(--text-muted); font-size: 0.7rem;">Был(а) {{ u.last_seen.strftime('%H:%M') }}</span>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="chat-main">
+        {% if chat_user %}
+            <div class="chat-header">
+                <div style="position: relative;">
+                    {{ comp.render_avatar(chat_user) }}
+                    {% if chat_user.is_online() %}
+                        <div style="position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; background: #2ecc71; border: 2px solid var(--surface); border-radius: 50%;"></div>
+                    {% endif %}
+                </div>
+                <div>
+                    <div style="font-weight: 600;">{{ chat_user.username }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">
+                        {% if chat_user.is_online() %}В сети{% else %}Был(а) в сети в {{ chat_user.last_seen.strftime('%H:%M') }}{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="messages-box">
+                {% for msg in messages %}
+                <div class="msg-bubble {% if msg.sender_id == user.id %}msg-mine{% else %}msg-theirs{% endif %}">
+                    {% if msg.media %}
+                    <div class="media-grid">
+                        {% for file in msg.media.split(',') %}
+                        <div class="media-item" onclick="openGallery('{{ msg.media }}', {{ loop.index0 }})">
+                            {# ОПРЕДЕЛЯЕМ URL: облако или локально #}
+                            {% set msg_media_url = file if 'http' in file else url_for('static', filename='uploads/' + file) %}
+                            
+                            {% if file.lower().endswith(('.mp4', '.webm', '.mov')) %}
+                                <video src="{{ msg_media_url }}"></video>
+                                <div class="video-hint">
+                                    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                </div>
+                            {% else %}
+                                <img src="{{ msg_media_url }}" loading="lazy">
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if msg.text %}<div style="line-height: 1.4;">{{ msg.text }}</div>{% endif %}
+                    <div style="font-size: 0.6rem; opacity: 0.6; text-align: right; margin-top: 4px;">{{ msg.timestamp.strftime('%H:%M') }}</div>
+
+                    {% if msg.sender_id == user.id %}
+                    <form action="/delete_message/{{ msg.id }}" method="POST">
+                        <button type="submit" class="delete-btn" title="Удалить сообщение">
+                            <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+
+            <div id="chat-preview-container" style="display: none; padding: 10px 20px; background: var(--bg-color); border-top: 1px solid var(--border);">
+                <div id="chat-preview-content" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px;"></div>
+                <button type="button" onclick="clearChatMedia()" style="font-size: 0.8rem; color: #e41e3f; background: none; border: none; cursor: pointer; padding: 5px 0;">Отменить выбор</button>
+            </div>
+
+            <form class="chat-input-area" method="POST" action="/messenger?chat_with={{ chat_user.id }}" enctype="multipart/form-data">
+                <label style="cursor: pointer; color: var(--text-muted); padding: 5px;">
+                    <svg class="icon" viewBox="0 0 24 24" style="width: 24px; height: 24px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    <input type="file" name="media" multiple accept="image/*,video/*" style="display: none;" onchange="previewChatMedia(event)">
+                </label>
+                <input type="text" name="text" class="input-text" style="flex: 1; margin: 0; border-radius: 24px; padding: 10px 18px;" placeholder="Ваше сообщение..." autocomplete="off">
+                <button type="submit" class="btn-primary" style="border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg class="icon" viewBox="0 0 24 24" style="stroke: white; width: 20px; height: 20px; margin-left: -2px;"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+            </form>
+        {% else %}
+            <div style="margin: auto; text-align: center; color: var(--text-muted);">
+                <svg class="icon" viewBox="0 0 24 24" style="width: 60px; height: 60px; opacity: 0.2; margin-bottom: 15px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <p>Выберите диалог из списка слева</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div id="imageLightbox">
+    <button onclick="closeLightbox()" style="position: absolute; top: 25px; right: 25px; color: white; background: none; border: none; font-size: 45px; cursor: pointer; z-index: 3100;">&times;</button>
+    <div id="lightboxContent" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px;"></div>
+    <button id="prevBtn" class="nav-btn" style="left: 30px;" onclick="changeMedia(-1)">❮</button>
+    <button id="nextBtn" class="nav-btn" style="right: 30px;" onclick="changeMedia(1)">❯</button>
+</div>
+
+<script>
+    // Авто-скролл
+    const box = document.getElementById('messages-box');
+    if (box) box.scrollTop = box.scrollHeight;
+
+    // Логика Галереи
+    let currentGallery = [];
+    let currentIndex = 0;
+
+    function openGallery(mediaStr, index) {
+        currentGallery = mediaStr.split(',');
+        currentIndex = index;
+        const lb = document.getElementById('imageLightbox');
+        lb.style.display = 'flex';
+        setTimeout(() => lb.style.opacity = '1', 10);
+        updateLightbox();
+    }
+
+    function updateLightbox() {
+        const content = document.getElementById('lightboxContent');
+        const file = currentGallery[currentIndex];
+        
+        // Проверяем: это полная ссылка (http) или просто имя файла
+        const mediaUrl = file.includes('http') ? file : "/static/uploads/" + file;
+        
+        const isVideo = file.toLowerCase().match(/\.(mp4|webm|mov)$/);
+        
+        content.innerHTML = isVideo 
+            ? `<video src="${mediaUrl}" controls autoplay style="max-width: 90%; max-height: 85vh; border-radius: 8px;"></video>`
+            : `<img src="${mediaUrl}" style="max-width: 90%; max-height: 85vh; object-fit: contain; border-radius: 8px;">`;
+        
+        document.getElementById('prevBtn').style.display = currentGallery.length > 1 ? 'block' : 'none';
+        document.getElementById('nextBtn').style.display = currentGallery.length > 1 ? 'block' : 'none';
+    }
+
+    function changeMedia(dir) {
+        currentIndex = (currentIndex + dir + currentGallery.length) % currentGallery.length;
+        updateLightbox();
+    }
+
+    function closeLightbox() {
+        const lb = document.getElementById('imageLightbox');
+        lb.style.opacity = '0';
+        setTimeout(() => {
+            lb.style.display = 'none';
+            document.getElementById('lightboxContent').innerHTML = '';
+        }, 300);
+    }
+
+    // Предпросмотр перед отправкой
+    function previewChatMedia(event) {
+        const files = event.target.files;
+        const container = document.getElementById('chat-preview-container');
+        const content = document.getElementById('chat-preview-content');
+        content.innerHTML = '';
+        container.style.display = files.length ? 'block' : 'none';
+        
+        for(let file of files) {
+            const url = URL.createObjectURL(file); // Здесь URL.createObjectURL всегда дает временную ссылку
+            if (file.type.startsWith('video/')) {
+                content.innerHTML += `<video src="${url}" style="height: 70px; border-radius: 8px; border: 1px solid var(--border);"></video>`;
+            } else {
+                content.innerHTML += `<img src="${url}" style="height: 70px; width: 70px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border);">`;
+            }
+        }
+    }
+
+    function clearChatMedia() {
+        document.querySelector('input[type="file"]').value = '';
+        document.getElementById('chat-preview-container').style.display = 'none';
+    }
+
+    // Поиск
+    function filterFriends() {
+        const filter = document.getElementById('friendSearch').value.toUpperCase();
+        const users = document.getElementsByClassName('chat-user');
+        for (let user of users) {
+            const name = user.querySelector('div div').textContent;
+            user.style.display = name.toUpperCase().indexOf(filter) > -1 ? "" : "none";
+        }
+    }
+</script>
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\notifications.html
+==================================================
+
+<!-- notifications.html -->
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .alert { padding: 15px 20px; margin-bottom: 15px; border-left: 4px solid var(--cyan); display: flex; align-items: center; gap: 15px; }
+    .alert-magenta { border-left-color: var(--magenta); }
+</style>
+<h2 class="neon-magenta">System Alerts</h2>
+<div class="glass" style="padding: 20px;">
+    <div class="alert glass alert-magenta">
+        <span class="neon-magenta">♥</span> CyberNinja_99 liked your post.
+    </div>
+    <div class="alert glass">
+        <span class="neon-cyan">@</span> NeonGlitch mentioned you in a comment.
+    </div>
+    <div class="alert glass alert-magenta">
+        <span class="neon-magenta">+</span> Ghost_In_Shell accepted your connection request.
+    </div>
+</div>
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\profile.html
+==================================================
+
+{% extends "base.html" %}
+{% import 'components.html' as comp %}
+{% block content %}
+
+<style>
+    /* Стили для статус-точки в профиле */
+    .avatar-wrapper { position: relative; width: 120px; height: 120px; margin: 0 auto 15px; }
+    .status-dot {
+        position: absolute; bottom: 5%; right: 5%;
+        width: 22px; height: 22px;
+        border-radius: 50%; border: 4px solid var(--surface);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+</style>
+
+{% if profile_user.is_banned %}
+<div class="card" style="text-align: center; padding: 50px 20px; border-top: 5px solid #e41e3f;">
+    {{ comp.render_avatar(profile_user, 'avatar-lg', show_status=false) }}
+    <h2 style="margin: 15px 0 5px;">{{ profile_user.username }}</h2>
+    <div style="background: #fdf2f2; color: #e41e3f; padding: 20px; border-radius: 12px; margin: 20px auto; max-width: 450px; text-align: left;">
+        <h3 style="margin-top: 0;">Аккаунт заблокирован</h3>
+        <p><strong>Причина:</strong> {{ profile_user.ban_reason }}</p>
+        <p><strong>Срок:</strong> {% if profile_user.ban_until %}{{ profile_user.ban_until.strftime('%d.%m.%Y %H:%M') }}{% else %}Перманентно{% endif %}</p>
+    </div>
+    {% if user.is_admin %}
+        <form action="/admin/unban/{{ profile_user.id }}" method="POST">
+            <button type="submit" class="btn-primary" style="background: #2ecc71;">Разблокировать (Админ)</button>
+        </form>
+    {% endif %}
+</div>
+
+{% else %}
+<div class="card" style="padding: 0; overflow: hidden; border-radius: 16px;">
+    <div style="height: 120px; background: linear-gradient(45deg, var(--primary), #a29bfe); opacity: 0.3;"></div>
+    
+    <div style="text-align: center; margin-top: -60px; padding: 0 20px 30px;">
+        <div class="avatar-wrapper">
+            {{ comp.render_avatar(profile_user, 'avatar-lg', show_status=false) }}
+            <div class="status-dot" style="background: {% if profile_user.is_online() %}#2ecc71{% else %}#95a5a6{% endif %};"></div>
+        </div>
+        
+        <h2 style="margin: 10px 0 5px; font-size: 1.8rem; display: flex; align-items: center; justify-content: center; gap: 10px;">
+            {{ profile_user.username }}
+            <span class="lvl-badge tier-{{ profile_user.level // 10 }}" style="font-size: 0.9rem;">Lvl {{ profile_user.level }}</span>
+            {% if profile_user.is_admin %}
+                <div class="custom-tooltip" style="color: #e67e22;">
+                    <svg class="icon" style="width: 22px; fill: #e67e22;" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span class="tooltip-text">{% if profile_user.id == 1 %}Владелец{% else %}Администратор{% endif %}</span>
+                </div>
+            {% endif %}
+        </h2>
+        
+        <p class="text-muted" style="margin-bottom: 20px;">{{ profile_user.bio }}</p>
+
+        <div style="display: flex; justify-content: center; gap: 40px; margin-bottom: 25px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 15px 0;">
+            <div style="text-align: center;">
+                <div style="font-weight: 800; font-size: 1.2rem;">{{ profile_user.posts|length }}</div>
+                <div class="text-muted" style="font-size: 0.7rem; text-transform: uppercase;">Посты</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-weight: 800; font-size: 1.2rem;">{{ profile_user.mutual_friends_count }}</div>
+                <div class="text-muted" style="font-size: 0.7rem; text-transform: uppercase;">Друзья</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="font-weight: 800; font-size: 1.2rem;">{{ profile_user.followers_count }}</div>
+                <div class="text-muted" style="font-size: 0.7rem; text-transform: uppercase;">Подписчики</div>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            {% if profile_user.id == user.id %}
+                <button onclick="document.getElementById('editModal').style.display='flex'" class="btn-primary" style="background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border);">Редактировать профиль</button>
+            {% else %}
+                <a href="/messenger?chat_with={{ profile_user.id }}" class="btn-primary" style="padding: 10px 25px; background: var(--surface); color: var(--primary); border: 1px solid var(--primary);">Сообщение</a>
+                
+                <form action="/toggle_friend/{{ profile_user.id }}" method="POST" style="margin: 0;">
+                    <button type="submit" class="btn-primary" style="
+                        {% if user.is_mutual(profile_user) %} background: #2ecc71; 
+                        {% elif user.is_following(profile_user) %} background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border);
+                        {% endif %}">
+                        {% if user.is_mutual(profile_user) %} Друзья
+                        {% elif user.is_following(profile_user) %} Вы подписаны
+                        {% elif profile_user.is_following(user) %} Подписаться в ответ
+                        {% else %} Подписаться
+                        {% endif %}
+                    </button>
+                </form>
+
+                {% if user.is_admin %}
+                    {% if profile_user.id == 1 %}
+                        <button class="btn-primary" style="background: #95a5a6; opacity: 0.6;" disabled>Owner 🔒</button>
+                    {% elif profile_user.is_admin and user.id != 1 %}
+                        <button class="btn-primary" style="background: #95a5a6; opacity: 0.6;" disabled>Admin 🔒</button>
+                    {% else %}
+                        <button onclick="document.getElementById('banModalProfile').style.display='flex'" class="btn-primary" style="background: #e41e3f;">Забанить</button>
+                    {% endif %}
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% set is_visible = profile_user.id == user.id or not profile_user.is_private or user.is_friend(profile_user) or user.is_admin %}
+
+{% if is_visible %}
+<div style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; margin-top: 20px;">
+    <div>
+        <div class="card">
+            <h4 style="margin-top: 0; margin-bottom: 15px;">Информация</h4>
+            <div style="display: flex; flex-direction: column; gap: 12px; font-size: 0.9rem;">
+                <div class="flex items-center gap-10">
+                    <svg class="icon text-muted" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>{% if profile_user.is_online() %}В сети сейчас{% else %}Был(а) в {{ profile_user.last_seen.strftime('%H:%M') }}{% endif %}</span>
+                </div>
+                {% if profile_user.birth_date %}
+                <div class="flex items-center gap-10">
+                    <svg class="icon text-muted" viewBox="0 0 24 24"><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><rect x="2" y="14" width="20" height="4"/></svg>
+                    <span>ДР: {{ profile_user.birth_date.strftime('%d.%m.%Y') }}</span>
+                </div>
+                {% endif %}
+                <div class="flex items-center gap-10">
+                    <svg class="icon text-muted" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/></svg>
+                    <span>Подписок: {{ profile_user.following_count }}</span>
+                </div>
+                <div class="flex items-center gap-10">
+                    <svg class="icon text-muted" viewBox="0 0 24 24" style="color: var(--primary);"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    <span>Регистрация: {{ profile_user.created_at.strftime('%d.%m.%Y') }}</span>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <div style="background: var(--bg-color); border-radius: 10px; height: 8px; overflow: hidden;">
+                    <div style="background: var(--primary); height: 100%; width: {{ progress }}%;"></div>
+                </div>
+                <div class="text-muted" style="font-size: 0.75rem; margin-top: 5px; text-align: center;">
+                    XP: {{ profile_user.xp }} / След. уровень: {{ xp_to_next }}
+                </div>
+            </div>
+        </div>
+
+        {% if profile_user.mutual_friends_count > 0 %}
+        <div class="card">
+            <h4 style="margin-top: 0;">Друзья</h4>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                {% for f in profile_user.friends %}
+                    {% if f.is_following(profile_user) %}
+                    <a href="/profile/{{ f.id }}" style="text-align: center; text-decoration: none;">
+                        {{ comp.render_avatar(f, 'avatar') }}
+                        <div style="font-size: 0.7rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis;">{{ f.username }}</div>
+                    </a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div>
+        {% if profile_user.id == user.id %}
+            {{ comp.post_form(user) }}
+        {% endif %}
+        
+        {% for post in profile_user.posts %}
+        <div class="card">
+            <div class="flex items-center" style="justify-content: space-between; margin-bottom: 10px;">
+                <div class="flex items-center gap-10">
+                    {{ comp.render_avatar(post.author) }}
+                    <div>
+                        <a href="/profile/{{ post.author.id }}" style="font-weight: 600;">{{ post.author.username }}</a>
+                        <div class="text-muted" style="font-size: 0.8rem;">{{ post.timestamp.strftime('%d.%m.%Y %H:%M') }}</div>
+                    </div>
+                </div>
+                {{ comp.post_menu(post, user) }}
+            </div>
+            
+            <div id="post-content-{{ post.id }}">
+                {% if post.content %}<div style="line-height: 1.5; white-space: pre-wrap;">{{ post.content }}</div>{% endif %}
+                {{ comp.render_media(post.media) }}
+            </div>
+
+            <form id="post-edit-form-{{ post.id }}" action="/edit_post/{{ post.id }}" method="POST" style="display: none; margin-top: 10px;">
+                <textarea name="content" class="input-text" rows="3">{{ post.content if post.content else '' }}</textarea>
+                <div style="text-align: right; margin-top: 5px;">
+                    <button type="button" class="btn-primary" style="background: none; color: var(--text-main);" onclick="hideEditForm({{ post.id }})">Отмена</button>
+                    <button type="submit" class="btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% else %}
+<div class="card" style="text-align: center; padding: 60px 20px; color: var(--text-muted);">
+    <svg class="icon" viewBox="0 0 24 24" style="width: 50px; height: 50px; opacity: 0.3; margin-bottom: 20px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <h3>Это закрытый профиль</h3>
+    <p>Добавьте пользователя в друзья, чтобы увидеть его публикации.</p>
+</div>
+{% endif %}
+{% endif %}
+
+{% if profile_user.id == user.id %}
+<div id="editModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+    <div class="card" style="width: 90%; max-width: 450px; position: relative;">
+        <span onclick="document.getElementById('editModal').style.display='none'" style="position: absolute; right: 20px; top: 15px; cursor: pointer; font-size: 1.5rem;">&times;</span>
+        <h3>Редактировать профиль</h3>
+        <form method="POST" action="/profile" enctype="multipart/form-data">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <label for="avatar-upload" style="cursor: pointer;">
+                    {{ comp.render_avatar(user, 'avatar-lg', show_status=false) }}
+                    <div style="color: var(--primary); font-size: 0.8rem; margin-top: 5px;">Сменить фото</div>
+                </label>
+                <input id="avatar-upload" type="file" name="avatar" accept="image/*" style="display: none;" onchange="previewImage(event)">
+            </div>
+            <label>Никнейм:</label>
+            <input type="text" name="username" class="input-text" value="{{ user.username }}" required>
+            <label>О себе:</label>
+            <textarea name="bio" class="input-text" rows="2">{{ user.bio }}</textarea>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                    <label>Пол:</label>
+                    <select name="gender" class="input-text">
+                        <option value="Мужской" {% if user.gender == 'Мужской' %}selected{% endif %}>Мужской</option>
+                        <option value="Женский" {% if user.gender == 'Женский' %}selected{% endif %}>Женский</option>
+                        <option value="" {% if not user.gender %}selected{% endif %}>Не указан</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Дата рождения:</label>
+                    <input type="date" name="birth_date" class="input-text" value="{{ user.birth_date if user.birth_date else '' }}">
+                </div>
+            </div>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-top: 10px;">
+                <input type="checkbox" name="is_private" {% if user.is_private %}checked{% endif %}> Закрытый профиль
+            </label>
+            <button type="submit" class="btn-primary" style="width: 100%; margin-top: 20px;">Сохранить изменения</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if user.is_admin and profile_user.id != user.id %}
+<div id="banModalProfile" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; align-items: center; justify-content: center;">
+    <div class="card" style="width: 90%; max-width: 400px; border-top: 5px solid #e41e3f;">
+        <h3>Заблокировать {{ profile_user.username }}</h3>
+        <form action="/admin/ban/{{ profile_user.id }}" method="POST">
+            <label>Причина:</label>
+            <input type="text" name="reason" class="input-text" placeholder="Нарушение правил..." required>
+            <label>Срок:</label>
+            <select name="duration" class="input-text">
+                <option value="1">1 день</option>
+                <option value="7">7 дней</option>
+                <option value="30">30 дней</option>
+                <option value="perm">Навсегда</option>
+            </select>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button type="button" class="btn-primary" style="background: none; color: var(--text-main); flex: 1;" onclick="document.getElementById('banModalProfile').style.display='none'">Отмена</button>
+                <button type="submit" class="btn-primary" style="background: #e41e3f; flex: 1;">Выдать бан</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+    function previewImage(event) {
+        const reader = new FileReader();
+        reader.onload = function() {
+            const output = document.querySelectorAll('.avatar-lg');
+            output.forEach(img => { if(img.tagName === 'IMG') img.src = reader.result; });
+        };
+        reader.readAsDataURL(event.target.files[0]);
+    }
+
+    window.onclick = function(event) {
+        const editModal = document.getElementById('editModal');
+        const banModal = document.getElementById('banModalProfile');
+        if (event.target == editModal) editModal.style.display = "none";
+        if (event.target == banModal) banModal.style.display = "none";
+    }
+</script>
+
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\register.html
+==================================================
+
+<!-- register.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">Добро пожаловать в Moxie</div>
+<div class="card" style="margin-top: 50px;">
+    <h2>Регистрация</h2>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}<p style="color: red;">{{ messages[0] }}</p>{% endif %}
+    {% endwith %}
+    <form method="POST" action="/register">
+        <input type="text" name="username" class="input-text" placeholder="Имя пользователя" required>
+        <input type="password" name="password" class="input-text" placeholder="Пароль" required>
+        <button type="submit" class="btn-primary" style="width: 100%;">Создать аккаунт</button>
+    </form>
+    <p style="text-align: center; margin-top: 20px;">
+        Уже есть аккаунт? <a href="/login" style="color: var(--primary);">Войти</a>
+    </p>
+</div>
+{% endblock %}
+
+
+==================================================
+FILE: C:\Users\ilush\OneDrive\Documents\IT Projects\moxie-app\templates\settings.html
+==================================================
+
+<!-- settings.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">Системные настройки</div>
+<div class="card">
+    <p class="text-muted">Редактирование личных данных перенесено на страницу вашего профиля.</p>
+    <a href="/profile" class="btn-primary" style="display: inline-block;">Перейти в профиль</a>
+</div>
+{% endblock %}
+

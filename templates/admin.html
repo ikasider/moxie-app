@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import 'components.html' as comp %}
 {% block content %}
 <div class="page-header" style="color: #e67e22;">
     <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Панель управления (Admin)
@@ -19,7 +20,9 @@
         <div class="flex items-center" style="justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
             
             <div class="flex items-center gap-10" style="opacity: {% if u.is_banned %}0.5{% else %}1{% endif %};">
-                <div class="avatar" style="width: 30px; height: 30px; font-size: 0.8rem;">{{ u.username[0]|upper }}</div>
+                <div style="width: 30px; height: 30px;">
+                    {{ comp.render_avatar(u, extra_class='avatar-sm', show_status=false) }}
+                </div>
                 <div>
                     <a href="/profile/{{ u.id }}" style="font-weight: 600; color: {% if u.is_admin %}#e67e22{% endif %};">{{ u.username }}</a>
                     {% if u.is_admin %}<span style="font-size: 0.7rem; background: #e67e22; color: white; padding: 2px 5px; border-radius: 5px;">Admin</span>{% endif %}

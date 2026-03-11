@@ -64,14 +64,12 @@ def save_media(file, folder):
             file_options={"content-type": file.content_type}
         )
         
-        # ... (твой код загрузки)
         res = supabase.storage.from_(bucket_name).get_public_url(filename)
         
-        # Если res это объект, берем из него атрибут public_url
+        # Убираем старый дубликат return res
         if hasattr(res, 'public_url'):
             return res.public_url
         return str(res)
-        return res
     except Exception as e:
         print(f"Ошибка загрузки в Supabase: {e}")
         return 'default.png'

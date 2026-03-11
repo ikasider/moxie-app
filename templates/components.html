@@ -3,8 +3,10 @@
 <div id="postFormContainer" class="card" style="{% if is_hidden %}display: none;{% endif %} padding: 0; overflow: hidden; border: 1px solid var(--border);">
     <form method="POST" action="/create_post" enctype="multipart/form-data" style="margin: 0;">
         <div class="flex" style="padding: 15px;">
-            {% if user.avatar != 'default.png' %}
-                <img src="/static/uploads/{{ user.avatar }}" class="avatar" style="object-fit: cover;">
+            {% if user.avatar and 'http' in user.avatar %}
+                <img src="{{ user.avatar }}" class="avatar" style="object-fit: cover;">
+            {% elif user.avatar and user.avatar != 'default.png' %}
+                <img src="{{ url_for('static', filename='uploads/' + user.avatar) }}" class="avatar" style="object-fit: cover;">
             {% else %}
                 <div class="avatar">{{ user.username[0]|upper }}</div>
             {% endif %}
