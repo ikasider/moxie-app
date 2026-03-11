@@ -80,29 +80,19 @@ function hideEditForm(postId) {
                 <line x1="9" y1="9" x2="15" y2="15"></line>
             </svg>
         </div>
-    {% elif target_user.avatar and target_user.avatar != 'default.png' %}
-        <img src="/static/uploads/{{ target_user.avatar }}" class="avatar {{ extra_class }}" style="object-fit: cover; border-radius: 50%; border: 1px solid var(--border);">
+    {% elif target_user.avatar %}
+        {# ПРОВЕРКА: ссылка это или локальный файл #}
+        {% if 'http' in target_user.avatar %}
+            <img src="{{ target_user.avatar }}" class="avatar {{ extra_class }}" style="object-fit: cover; border-radius: 50%; border: 1px solid var(--border);">
+        {% else %}
+            <img src="{{ url_for('static', filename='uploads/' + target_user.avatar) }}" class="avatar {{ extra_class }}" style="object-fit: cover; border-radius: 50%; border: 1px solid var(--border);">
+        {% endif %}
     {% else %}
         <div class="avatar {{ extra_class }}" style="border-radius: 50%; border: 1px solid var(--border);">{{ target_user.username[0]|upper }}</div>
     {% endif %}
 
     {% if show_status and not target_user.is_banned %}
-        {# Авто-размер точки: 18% от размера аватарки #}
-        <div style="
-            position: absolute; 
-            bottom: 5%; 
-            right: 5%; 
-            width: 20%; 
-            height: 20%; 
-            min-width: 8px; 
-            min-height: 8px;
-            max-width: 20px;
-            max-height: 20px;
-            border-radius: 50%; 
-            border: 2px solid var(--surface);
-            background: {% if target_user.is_online() %}#2ecc71{% else %}#95a5a6{% endif %};
-            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-        " title="{% if target_user.is_online() %}В сети{% else %}Не в сети{% endif %}"></div>
+        <div style="position: absolute; bottom: 5%; right: 5%; width: 20%; height: 20%; min-width: 8px; min-height: 8px; max-width: 20px; max-height: 20px; border-radius: 50%; border: 2px solid var(--surface); background: {% if target_user.is_online() %}#2ecc71{% else %}#95a5a6{% endif %}; box-shadow: 0 1px 2px rgba(0,0,0,0.2);" title="{% if target_user.is_online() %}В сети{% else %}Не в сети{% endif %}"></div>
     {% endif %}
 </div>
 {% endmacro %}
@@ -136,11 +126,14 @@ function hideEditForm(postId) {
         {% for filename in files %}
             {% set ext = filename.split('.')[-1]|lower %}
             <div class="media-item" style="position: relative; aspect-ratio: 1/1; background: #000; cursor: pointer;">
+                {# Определяем URL: либо напрямую, либо через static #}
+                {% set media_url = filename if 'http' in filename else url_for('static', filename='uploads/' + filename) %}
+                
                 {% if ext in ['mp4', 'webm', 'mov'] %}
-                    <video src="/static/uploads/{{ filename }}" style="width: 100%; height: 100%; object-fit: cover;"></video>
+                    <video src="{{ media_url }}" style="width: 100%; height: 100%; object-fit: cover;"></video>
                     <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; background: rgba(0,0,0,0.5); border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; pointer-events: none;">▶</div>
                 {% else %}
-                    <img src="/static/uploads/{{ filename }}" style="width: 100%; height: 100%; object-fit: cover;" onclick="openGallery('{{ media_str }}', {{ loop.index0 }})">
+                    <img src="{{ media_url }}" style="width: 100%; height: 100%; object-fit: cover;" onclick="openGallery('{{ media_str }}', {{ loop.index0 }})">
                 {% endif %}
             </div>
         {% endfor %}

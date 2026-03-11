@@ -217,13 +217,16 @@
                     <div class="media-grid">
                         {% for file in msg.media.split(',') %}
                         <div class="media-item" onclick="openGallery('{{ msg.media }}', {{ loop.index0 }})">
+                            {# ОПРЕДЕЛЯЕМ URL: облако или локально #}
+                            {% set msg_media_url = file if 'http' in file else url_for('static', filename='uploads/' + file) %}
+                            
                             {% if file.lower().endswith(('.mp4', '.webm', '.mov')) %}
-                                <video src="/static/uploads/{{ file }}"></video>
+                                <video src="{{ msg_media_url }}"></video>
                                 <div class="video-hint">
                                     <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                                 </div>
                             {% else %}
-                                <img src="/static/uploads/{{ file }}" loading="lazy">
+                                <img src="{{ msg_media_url }}" loading="lazy">
                             {% endif %}
                         </div>
                         {% endfor %}
@@ -296,11 +299,15 @@
     function updateLightbox() {
         const content = document.getElementById('lightboxContent');
         const file = currentGallery[currentIndex];
+        
+        // Проверяем: это полная ссылка (http) или просто имя файла
+        const mediaUrl = file.includes('http') ? file : "/static/uploads/" + file;
+        
         const isVideo = file.toLowerCase().match(/\.(mp4|webm|mov)$/);
         
         content.innerHTML = isVideo 
-            ? `<video src="/static/uploads/${file}" controls autoplay style="max-width: 90%; max-height: 85vh; border-radius: 8px;"></video>`
-            : `<img src="/static/uploads/${file}" style="max-width: 90%; max-height: 85vh; object-fit: contain; border-radius: 8px;">`;
+            ? `<video src="${mediaUrl}" controls autoplay style="max-width: 90%; max-height: 85vh; border-radius: 8px;"></video>`
+            : `<img src="${mediaUrl}" style="max-width: 90%; max-height: 85vh; object-fit: contain; border-radius: 8px;">`;
         
         document.getElementById('prevBtn').style.display = currentGallery.length > 1 ? 'block' : 'none';
         document.getElementById('nextBtn').style.display = currentGallery.length > 1 ? 'block' : 'none';
@@ -329,7 +336,7 @@
         container.style.display = files.length ? 'block' : 'none';
         
         for(let file of files) {
-            const url = URL.createObjectURL(file);
+            const url = URL.createObjectURL(file); // Здесь URL.createObjectURL всегда дает временную ссылку
             if (file.type.startsWith('video/')) {
                 content.innerHTML += `<video src="${url}" style="height: 70px; border-radius: 8px; border: 1px solid var(--border);"></video>`;
             } else {

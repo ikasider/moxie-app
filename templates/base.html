@@ -170,8 +170,12 @@
         <div class="logo"><a href="/">Moxie</a></div>
         <a href="/profile">
             <div class="card flex items-center gap-10" style="margin-bottom: 20px; padding: 10px;">
-                {% if user.avatar and user.avatar != 'default.png' %}
-                    <img src="/static/uploads/{{ user.avatar }}" class="avatar" style="object-fit: cover;">
+                {% if user.avatar %}
+                    {% if 'http' in user.avatar %}
+                        <img src="{{ user.avatar }}" class="avatar" style="object-fit: cover;">
+                    {% else %}
+                        <img src="{{ url_for('static', filename='uploads/' + user.avatar) }}" class="avatar" style="object-fit: cover;">
+                    {% endif %}
                 {% else %}
                     <div class="avatar">{{ user.username[0]|upper }}</div>
                 {% endif %}
